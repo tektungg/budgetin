@@ -597,7 +597,10 @@ async def setup_bot():
     
     # Set webhook
     ngrok_url = os.getenv('NGROK_URL')
-    if ngrok_url:
+    public_url = os.getenv('PUBLIC_URL')
+    if public_url:
+        webhook_url = f"{public_url}/{bot_token}"
+    elif ngrok_url:
         webhook_url = f"{ngrok_url}/{bot_token}"
     else:
         webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'your-app-name.onrender.com')}/{bot_token}"
