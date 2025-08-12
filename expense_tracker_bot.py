@@ -33,14 +33,46 @@ class ExpenseTracker:
     def setup_google_sheets(self):
         """Setup Google Sheets connection"""
         try:
-            # Load credentials from environment variable or file
+            # Try multiple ways to load credentials
+            creds_dict = None
+            
+            # Method 1: From environment variable (as JSON string)
             creds_json = os.getenv('GOOGLE_CREDENTIALS_JSON')
             if creds_json:
-                creds_dict = json.loads(creds_json)
-            else:
-                # For local development, load from file
-                with open('credentials.json', 'r') as f:
-                    creds_dict = json.load(f)
+                try:
+                    creds_dict = json.loads(creds_json)
+                except json.JSONDecodeError:
+                    logger.error("Invalid JSON in GOOGLE_CREDENTIALS_JSON")
+            
+            # Method 2: From individual environment variables
+            if not creds_dict:
+                private_key = os.getenv('GOOGLE_PRIVATE_KEY')
+                client_email = os.getenv('GOOGLE_CLIENT_EMAIL')
+                project_id = os.getenv('GOOGLE_PROJECT_ID')
+                
+                if private_key and client_email and project_id:
+                    # Replace \\n with actual newlines in private key
+                    private_key = private_key.replace('\\n', '\n')
+                    creds_dict = {
+                        "type": "service_account",
+                        "project_id": project_id,
+                        "client_email": client_email,
+                        "private_key": private_key,
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+                    }
+            
+            # Method 3: From local file (for development)
+            if not creds_dict:
+                try:
+                    with open('credentials.json', 'r') as f:
+                        creds_dict = json.load(f)
+                except FileNotFoundError:
+                    pass
+            
+            if not creds_dict:
+                raise Exception("No valid Google credentials found")
             
             # Setup credentials
             scope = ['https://www.googleapis.com/auth/spreadsheets']
@@ -354,37 +386,104 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle errors"""
     logger.error(f"Update {update} caused error {context.error}")
 
-def main():
-    """Main function to run the bot"""
+from flask import Flask, request
+import asyncio
+import threading
+
+# Flask app for webhook
+flask_app = Flask(__name__)
+
+# Global variable for bot application
+bot_application = None
+
+@flask_app.route('/', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return "Bot is running!", 200
+
+@flask_app.route(f'/{os.getenv("BOT_TOKEN", "webhook")}', methods=['POST'])
+def telegram_webhook():
+    """Handle Telegram webhook"""
+    if bot_application:
+        try:
+            # Get update from Telegram
+            update_data = request.get_json()
+            
+            # Process update asynchronously
+            asyncio.run(process_telegram_update(update_data))
+            
+            return "OK", 200
+        except Exception as e:
+            logger.error(f"Webhook error: {e}")
+            return "Error", 500
+    
+    return "Bot not initialized", 500
+
+async def process_telegram_update(update_data):
+    """Process Telegram update"""
+    try:
+        from telegram import Update
+        update = Update.de_json(update_data, bot_application.bot)
+        await bot_application.process_update(update)
+    except Exception as e:
+        logger.error(f"Error processing update: {e}")
+
+async def setup_bot():
+    """Setup bot application"""
+    global bot_application
+    
     # Get bot token from environment
     bot_token = os.getenv('BOT_TOKEN')
     if not bot_token:
         logger.error("BOT_TOKEN environment variable is required")
-        return
+        return None
     
     # Create application
-    application = Application.builder().token(bot_token).build()
+    bot_application = Application.builder().token(bot_token).build()
     
     # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("ringkasan", summary_command))
-    application.add_handler(CommandHandler("kategori", categories_command))
+    bot_application.add_handler(CommandHandler("start", start))
+    bot_application.add_handler(CommandHandler("help", help_command))
+    bot_application.add_handler(CommandHandler("ringkasan", summary_command))
+    bot_application.add_handler(CommandHandler("kategori", categories_command))
     
     # Handle all text messages as potential expense entries
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense))
+    bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense))
     
     # Add error handler
-    application.add_error_handler(error_handler)
+    bot_application.add_error_handler(error_handler)
     
-    # Start the bot
+    # Initialize bot
+    await bot_application.initialize()
+    
+    # Set webhook
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'your-app-name.onrender.com')}/{bot_token}"
+    await bot_application.bot.set_webhook(url=webhook_url)
+    
+    logger.info(f"Bot initialized with webhook: {webhook_url}")
+    
+    return bot_application
+
+def main():
+    """Main function to run the bot"""
+    # Setup bot in background thread
+    def setup_bot_thread():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(setup_bot())
+    
+    # Start bot setup in background
+    bot_thread = threading.Thread(target=setup_bot_thread)
+    bot_thread.daemon = True
+    bot_thread.start()
+    
+    # Wait a moment for bot to initialize
+    import time
+    time.sleep(3)
+    
+    # Start Flask app
     port = int(os.environ.get('PORT', 8080))
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=port,
-        url_path=bot_token,
-        webhook_url=f"https://your-app-name.onrender.com/{bot_token}"
-    )
+    flask_app.run(host='0.0.0.0', port=port, debug=False)
 
 if __name__ == '__main__':
     main()

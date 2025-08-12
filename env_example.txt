@@ -4,5 +4,10 @@ BOT_TOKEN=your_telegram_bot_token_here
 # Google Spreadsheet ID (from URL)
 SPREADSHEET_ID=your_spreadsheet_id_here
 
-# Google Service Account Credentials (entire JSON as string)
+# Option 1: Google Service Account Credentials (entire JSON as single line string)
 GOOGLE_CREDENTIALS_JSON={"type":"service_account","project_id":"your-project"...}
+
+# Option 2: Individual Google credentials (alternative, easier to set)
+GOOGLE_PROJECT_ID=gen-lang-client-0335611832
+GOOGLE_CLIENT_EMAIL=budgetin@gen-lang-client-0335611832.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIIEvQI...
