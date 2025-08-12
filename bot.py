@@ -6,7 +6,14 @@ import gspread
 from google.oauth2.service_account import Credentials
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CallbackQueryHandler
+from dotenv import load_dotenv
 import json
+import pytz
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Setup logging
 logging.basicConfig(
@@ -16,6 +23,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class ExpenseTracker:
+    """
+    Main class for handling expense tracking logic, Google Sheets integration,
+    category classification, and formatting utilities.
+    """
     def __init__(self):
         # Categories for expense classification
         self.categories = {
@@ -24,16 +35,64 @@ class ExpenseTracker:
             'utilities': ['listrik', 'air', 'internet', 'wifi', 'pulsa', 'token', 'pln', 'pdam', 'indihome'],
             'health': ['obat', 'dokter', 'rumah sakit', 'rs', 'klinik', 'vitamin', 'medical', 'kesehatan'],
             'urgent': ['darurat', 'urgent', 'penting', 'mendadak', 'emergency'],
-            'entertainment': ['nonton', 'bioskop', 'game', 'musik', 'streaming', 'netflix', 'spotify', 'hiburan', 'jalan', 'mall', 'cafe', 'restaurant']
+            'entertainment': ['nonton', 'bioskop', 'game', 'musik', 'streaming', 'netflix', 'spotify', 'hiburan', 'jalan', 'mall', 'cafe', 'restaurant', 'film', 'nongkrong']
         }
         
         # Initialize Google Sheets
         self.setup_google_sheets()
+
+    def format_tanggal_indo(self, tanggal_str):
+        """
+        Format date from YYYY-MM-DD to Indonesian format: Day, DD Month YYYY.
+        Example: "2025-08-12" -> "Selasa, 12 Agustus 2025"
+        """
+        bulan_indo = [
+            "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+            "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+        ]
+        hari_indo = [
+            "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"
+        ]
+        try:
+            dt = datetime.strptime(tanggal_str, "%Y-%m-%d")
+            hari = hari_indo[dt.weekday()]
+            bulan = bulan_indo[dt.month]
+            return f"{hari}, {dt.day} {bulan} {dt.year}"
+        except Exception:
+            return tanggal_str
+        
+    def parse_tanggal_indo(self, tanggal_str):
+        """
+        Parse Indonesian date format to datetime object.
+        Supports both "Day, DD Month YYYY" and "YYYY-MM-DD".
+        """
+        bulan_map = {
+            'Januari': 1, 'Februari': 2, 'Maret': 3, 'April': 4, 'Mei': 5, 'Juni': 6,
+            'Juli': 7, 'Agustus': 8, 'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12
+        }
+        try:
+            # Example: "Selasa, 12 Agustus 2025"
+            parts = tanggal_str.split(',')
+            if len(parts) == 2:
+                _, tgl_bulan_tahun = parts
+                tgl_bulan_tahun = tgl_bulan_tahun.strip()
+                tgl_split = tgl_bulan_tahun.split(' ')
+                if len(tgl_split) == 3:
+                    hari_num = int(tgl_split[0])
+                    bulan_num = bulan_map.get(tgl_split[1], 1)
+                    tahun_num = int(tgl_split[2])
+                    return datetime(tahun_num, bulan_num, hari_num)
+            # fallback
+            return datetime.strptime(tanggal_str, '%Y-%m-%d')
+        except Exception:
+            return None   
     
     def setup_google_sheets(self):
-        """Setup Google Sheets connection"""
+        """
+        Setup Google Sheets connection using credentials from environment variables.
+        Supports multiple credential loading methods.
+        """
         try:
-            # Try multiple ways to load credentials
             creds_dict = None
             
             # Method 1: From environment variable (as JSON string)
@@ -51,7 +110,6 @@ class ExpenseTracker:
                 project_id = os.getenv('GOOGLE_PROJECT_ID')
                 
                 if private_key and client_email and project_id:
-                    # Replace \\n with actual newlines in private key
                     private_key = private_key.replace('\\n', '\n')
                     creds_dict = {
                         "type": "service_account",
@@ -81,7 +139,7 @@ class ExpenseTracker:
             # Initialize gspread client
             self.gc = gspread.authorize(creds)
             
-            # Open spreadsheet by ID (you'll need to set this)
+            # Open spreadsheet by ID
             spreadsheet_id = os.getenv('SPREADSHEET_ID', 'YOUR_SPREADSHEET_ID_HERE')
             self.sh = self.gc.open_by_key(spreadsheet_id)
             
@@ -94,21 +152,22 @@ class ExpenseTracker:
             self.sh = None
     
     def setup_worksheet(self):
-        """Setup worksheet headers if not exists"""
+        """
+        Ensure the main worksheet 'Pengeluaran' exists and has the correct headers.
+        """
         try:
             # Try to get or create main worksheet
             try:
                 ws = self.sh.worksheet("Pengeluaran")
             except gspread.exceptions.WorksheetNotFound:
-                ws = self.sh.add_worksheet("Pengeluaran", rows=1000, cols=6)
+                ws = self.sh.add_worksheet("Pengeluaran", rows=1000, cols=5)
             
             # Check if headers exist
             headers = ws.row_values(1)
             if not headers:
                 # Add headers
-                ws.update('A1:F1', [['Tanggal', 'Waktu', 'Jumlah', 'Keterangan', 'Kategori', 'User']])
-                # Format headers
-                ws.format('A1:F1', {
+                ws.update('A1:E1', [['Tanggal', 'Waktu', 'Jumlah', 'Keterangan', 'Kategori']])
+                ws.format('A1:E1', {
                     "backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8},
                     "textFormat": {"bold": True}
                 })
@@ -120,38 +179,43 @@ class ExpenseTracker:
             self.worksheet = None
     
     def extract_amount(self, text):
-        """Extract amount from text"""
-        # Pattern to match numbers with 'rb', 'ribu', 'k', or just numbers
+        """
+        Extract amount from text, supporting formats like 1,5 juta, 1.500.000, 1,5rb, etc.
+        Returns (amount, start_pos, end_pos) or (None, None, None) if not found.
+        """
+        text_lower = text.lower().replace(',', '.')
         patterns = [
-            r'(\d+(?:\.\d+)?)\s*(?:rb|ribu)',  # 50rb, 50 rb, 50ribu
-            r'(\d+(?:\.\d+)?)\s*k',           # 50k
-            r'(\d+(?:\.\d+)?)\s*juta',        # 1.5juta
-            r'(\d{1,3}(?:\.\d{3})*)',         # 50.000
-            r'(\d+)'                          # plain number
+            r'(\d+(?:[\.,]\d+)?)(?:\s*)(rb|ribu|k|juta)',  # 1.5juta, 1,5rb, 1.500rb
+            r'(\d{4,})'  # 4 digits or more
         ]
-        
-        text_lower = text.lower()
-        
         for pattern in patterns:
             match = re.search(pattern, text_lower)
             if match:
-                amount_str = match.group(1)
-                amount = float(amount_str.replace('.', ''))
-                
-                # Convert based on suffix
-                if 'rb' in text_lower or 'ribu' in text_lower:
-                    amount *= 1000
-                elif 'k' in text_lower and 'juta' not in text_lower:
-                    amount *= 1000
-                elif 'juta' in text_lower:
-                    amount *= 1000000
-                
-                return int(amount), match.start(), match.end()
-        
+                if len(match.groups()) == 2:
+                    amount_str, satuan = match.groups()
+                    amount = float(amount_str.replace('.', '').replace(',', '.'))
+                    if satuan in ['rb', 'ribu', 'k']:
+                        amount *= 1000
+                    elif satuan == 'juta':
+                        amount *= 1000000
+                    return int(amount), match.start(), match.end()
+                else:
+                    amount_str = match.group(1)
+                    amount = int(amount_str.replace('.', ''))
+                    return amount, match.start(), match.end()
+        # 3 digits or more
+        match = re.search(r'(\d{3,})', text_lower)
+        if match:
+            amount_str = match.group(1)
+            amount = int(amount_str.replace('.', ''))
+            return amount, match.start(), match.end()
         return None, None, None
     
     def classify_category(self, description):
-        """Classify expense into category based on description"""
+        """
+        Classify expense into a category based on description keywords.
+        Returns the category name or 'Other'.
+        """
         description_lower = description.lower()
         
         for category, keywords in self.categories.items():
@@ -162,7 +226,10 @@ class ExpenseTracker:
         return 'Other'
     
     def get_description(self, text, start_pos, end_pos):
-        """Extract description by removing the amount part"""
+        """
+        Extract description by removing the amount part from the text.
+        Cleans up common words.
+        """
         before_amount = text[:start_pos].strip()
         after_amount = text[end_pos:].strip()
         
@@ -176,81 +243,112 @@ class ExpenseTracker:
         
         return ' '.join(cleaned_words).strip() or 'Pengeluaran'
     
-    def add_expense(self, amount, description, category, user_name):
-        """Add expense to Google Sheets"""
+    def get_or_create_user_worksheet(self, user_name):
+        """
+        Get or create a worksheet for a specific user.
+        Worksheet name is based on the user's Telegram name.
+        """
         try:
-            if not self.worksheet:
-                return False, "Google Sheets tidak tersedia"
-            
-            # Get current datetime in Jakarta timezone
-            now = datetime.now(timezone.utc)  # You might want to adjust timezone
-            date_str = now.strftime('%Y-%m-%d')
+            ws_name = user_name.strip().title()
+            try:
+                ws = self.sh.worksheet(ws_name)
+            except gspread.exceptions.WorksheetNotFound:
+                ws = self.sh.add_worksheet(ws_name, rows=1000, cols=5)
+                ws.update('A1:E1', [['Tanggal', 'Waktu', 'Jumlah', 'Keterangan', 'Kategori']])
+                ws.format('A1:E1', {
+                    "backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8},
+                    "textFormat": {"bold": True}
+                })
+            return ws
+        except Exception as e:
+            logger.error(f"Error getting/creating worksheet for user {user_name}: {e}")
+            return None
+
+    def add_expense(self, amount, description, category, user_name):
+        """
+        Add an expense row to the user's worksheet in Google Sheets.
+        Returns (success: bool, message: str).
+        """
+        if amount <= 0:
+            return False, "Amount must be greater than zero."
+        try:
+            ws = self.get_or_create_user_worksheet(user_name)
+            if not ws:
+                return False, "Google Sheets is not available for this user. Check connection or credentials."
+            # Get current datetime in Asia/Jakarta timezone
+            jakarta = pytz.timezone('Asia/Jakarta')
+            now = datetime.now(jakarta)
+            date_str = self.format_tanggal_indo(now.strftime('%Y-%m-%d'))
             time_str = now.strftime('%H:%M:%S')
-            
-            # Add row to sheet
-            row = [date_str, time_str, amount, description, category, user_name]
-            self.worksheet.append_row(row)
-            
-            return True, "Berhasil dicatat"
-            
+            row = [date_str, time_str, amount, description, category]
+            try:
+                ws.append_row(row)
+            except Exception as e:
+                # Retry once if failed
+                logger.error(f"Error adding expense, retrying: {e}")
+                try:
+                    ws.append_row(row)
+                except Exception as e2:
+                    logger.error(f"Retry failed: {e2}")
+                    return False, f"Failed to save to Google Sheets: {str(e2)}"
+            return True, "Saved successfully"
         except Exception as e:
             logger.error(f"Error adding expense: {e}")
-            return False, f"Gagal menyimpan: {str(e)}"
-    
-    def get_monthly_summary(self, year=None, month=None):
-        """Get monthly expense summary"""
+            return False, f"Failed to save: {str(e)}"
+        
+    def get_monthly_summary(self, user_name=None, year=None, month=None):
+        """
+        Get monthly expense summary for a user (or main worksheet if user not found).
+        Returns a formatted string summary.
+        """
         try:
-            if not self.worksheet:
-                return "Google Sheets tidak tersedia"
-            
+            ws = None
+            if user_name:
+                ws = self.get_or_create_user_worksheet(user_name)
+            if not ws:
+                ws = self.worksheet
+            if not ws:
+                return "Google Sheets is not available"
             # Get current month if not specified
             if not year or not month:
                 now = datetime.now()
                 year = year or now.year
                 month = month or now.month
-            
-            # Get all records
-            records = self.worksheet.get_all_records()
-            
+            records = ws.get_all_records()
             # Filter by month
             monthly_records = []
             for record in records:
                 try:
-                    date_obj = datetime.strptime(record['Tanggal'], '%Y-%m-%d')
-                    if date_obj.year == year and date_obj.month == month:
+                    date_obj = self.parse_tanggal_indo(record['Tanggal'])
+                    if date_obj and date_obj.year == year and date_obj.month == month:
                         monthly_records.append(record)
                 except:
                     continue
-            
             if not monthly_records:
-                return f"Tidak ada data untuk bulan {month}/{year}"
-            
-            # Calculate summary
+                return f"No data for {month}/{year}"
             total = sum(int(record['Jumlah']) for record in monthly_records)
             count = len(monthly_records)
-            
-            # Category breakdown
             categories = {}
             for record in monthly_records:
                 cat = record['Kategori']
                 categories[cat] = categories.get(cat, 0) + int(record['Jumlah'])
-            
-            # Format response
-            response = f"📊 *Ringkasan Pengeluaran {month}/{year}*\n\n"
+            bulan_indo = [
+                "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+                "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+            ]
+            nama_bulan = bulan_indo[month]
+            response = f"📊 *Ringkasan Pengeluaran untuk Bulan {nama_bulan} {year}*\n\n"
             response += f"💰 Total: Rp {total:,}\n"
             response += f"📝 Jumlah transaksi: {count}\n"
             response += f"📈 Rata-rata per transaksi: Rp {total//count:,}\n\n"
-            response += "*Per Kategori:*\n"
-            
+            response += "*Berdasarkan Kategori:*\n"
             for cat, amount in sorted(categories.items(), key=lambda x: x[1], reverse=True):
                 percentage = (amount / total) * 100
                 response += f"• {cat}: Rp {amount:,} ({percentage:.1f}%)\n"
-            
             return response
-            
         except Exception as e:
             logger.error(f"Error getting monthly summary: {e}")
-            return f"Error mengambil ringkasan: {str(e)}"
+            return f"Error getting summary: {str(e)}"
 
 # Initialize expense tracker
 expense_tracker = ExpenseTracker()
@@ -313,7 +411,9 @@ Semua data otomatis tersimpan ke Google Sheets! 📊
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Summary command handler"""
-    summary = expense_tracker.get_monthly_summary()
+    user = update.effective_user
+    user_name = user.first_name or user.username or "Unknown"
+    summary = expense_tracker.get_monthly_summary(user_name=user_name)
     await update.message.reply_text(summary, parse_mode='Markdown')
 
 async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -337,7 +437,7 @@ obat, dokter, rumah sakit, vitamin
 darurat, urgent, mendadak, emergency
 
 🎮 *Entertainment*
-nonton, game, musik, cafe, restaurant
+nonton, game, musik, cafe, restaurant, film, nongkrong
 
 Kategori akan dipilih otomatis berdasarkan kata kunci dalam keterangan Anda.
     """
@@ -348,27 +448,35 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user = update.effective_user
     user_name = user.first_name or user.username or "Unknown"
-    
+
     # Extract amount from message
     amount, start_pos, end_pos = expense_tracker.extract_amount(text)
-    
-    if not amount:
+
+    # Validasi jumlah uang
+    if amount is None:
         await update.message.reply_text(
             "❌ Tidak dapat mendeteksi jumlah uang.\n"
             "Contoh: 'beli beras 50rb' atau 'makan siang 25000'"
         )
         return
-    
+    if amount <= 0:
+        await update.message.reply_text("❌ Jumlah uang tidak boleh nol atau negatif.")
+        return
+
     # Get description
     description = expense_tracker.get_description(text, start_pos, end_pos)
-    
+
     # Classify category
     category = expense_tracker.classify_category(description)
-    
+
     # Add to spreadsheet
     success, message = expense_tracker.add_expense(amount, description, category, user_name)
-    
+
     if success:
+        # Ambil tanggal hari ini dalam format Indonesia
+        jakarta = pytz.timezone('Asia/Jakarta')
+        now = datetime.now(jakarta)
+        tanggal_indo = expense_tracker.format_tanggal_indo(now.strftime('%Y-%m-%d'))
         response = f"""
 ✅ *Pengeluaran berhasil dicatat!*
 
@@ -376,12 +484,40 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📝 Keterangan: {description}
 📂 Kategori: {category}
 👤 User: {user_name}
-📅 Tersimpan ke Google Sheets!
+📅 Tanggal: {tanggal_indo}
+Tersimpan ke Google Sheets!
         """
-        await update.message.reply_text(response, parse_mode='Markdown')
+        # Ambil link Google Sheet dari .env
+        spreadsheet_id = os.getenv('SPREADSHEET_ID')
+        sheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+
+        keyboard = [
+            [InlineKeyboardButton("📄 Buka Google Sheet", url=sheet_url)],
+            [InlineKeyboardButton("📊 Lihat Ringkasan", callback_data="show_summary")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(response, parse_mode='Markdown', reply_markup=reply_markup)
     else:
         await update.message.reply_text(f"❌ Gagal menyimpan: {message}")
 
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()  # Segera acknowledge callback
+
+    # Kirim pesan loading dulu agar user tidak menunggu lama
+    loading_message = await query.message.reply_text("⏳ Mengambil ringkasan, mohon tunggu...")
+
+    try:
+        user = query.from_user
+        user_name = user.first_name or user.username or "Unknown"
+        summary = expense_tracker.get_monthly_summary(user_name=user_name)
+        # Edit pesan loading menjadi ringkasan
+        await loading_message.edit_text(summary, parse_mode='Markdown')
+    except Exception as e:
+        logger.error(f"Error in button_callback: {e}")
+        await loading_message.edit_text("❌ Gagal mengambil ringkasan.")
+                
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle errors"""
     logger.error(f"Update {update} caused error {context.error}")
@@ -406,19 +542,21 @@ def telegram_webhook():
     """Handle Telegram webhook"""
     if bot_application:
         try:
-            # Get update from Telegram
             update_data = request.get_json()
-            
-            # Process update asynchronously
-            asyncio.run(process_telegram_update(update_data))
-            
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            if loop.is_running():
+                asyncio.run_coroutine_threadsafe(process_telegram_update(update_data), loop)
+            else:
+                loop.run_until_complete(process_telegram_update(update_data))
             return "OK", 200
         except Exception as e:
             logger.error(f"Webhook error: {e}")
             return "Error", 500
-    
     return "Bot not initialized", 500
-
 async def process_telegram_update(update_data):
     """Process Telegram update"""
     try:
@@ -446,6 +584,7 @@ async def setup_bot():
     bot_application.add_handler(CommandHandler("help", help_command))
     bot_application.add_handler(CommandHandler("ringkasan", summary_command))
     bot_application.add_handler(CommandHandler("kategori", categories_command))
+    bot_application.add_handler(CallbackQueryHandler(button_callback))
     
     # Handle all text messages as potential expense entries
     bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense))
@@ -457,11 +596,15 @@ async def setup_bot():
     await bot_application.initialize()
     
     # Set webhook
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'your-app-name.onrender.com')}/{bot_token}"
+    ngrok_url = os.getenv('NGROK_URL')
+    if ngrok_url:
+        webhook_url = f"{ngrok_url}/{bot_token}"
+    else:
+        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'your-app-name.onrender.com')}/{bot_token}"
+
     await bot_application.bot.set_webhook(url=webhook_url)
-    
     logger.info(f"Bot initialized with webhook: {webhook_url}")
-    
+
     return bot_application
 
 def main():

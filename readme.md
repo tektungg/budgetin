@@ -14,7 +14,7 @@ Bot Telegram untuk mencatat pengeluaran yang otomatis tersimpan ke Google Sheets
 ## Format Input yang Didukung
 
 - `50rb`, `50 rb`, `50ribu`
-- `50k`, `50 k` 
+- `50k`, `50 k`
 - `1.5juta`, `2juta`
 - `50000` (angka biasa)
 - `50.000` (dengan titik pemisah)
@@ -22,7 +22,7 @@ Bot Telegram untuk mencatat pengeluaran yang otomatis tersimpan ke Google Sheets
 ## Kategori Otomatis
 
 - **Daily Needs**: makan, minum, beras, sayur, grocery, dll
-- **Transportation**: bensin, ojek, grab, gojek, parkir, dll  
+- **Transportation**: bensin, ojek, grab, gojek, parkir, dll
 - **Utilities**: listrik, air, internet, pulsa, token, dll
 - **Health**: obat, dokter, rumah sakit, vitamin, dll
 - **Urgent**: darurat, urgent, mendadak, emergency
@@ -31,11 +31,13 @@ Bot Telegram untuk mencatat pengeluaran yang otomatis tersimpan ke Google Sheets
 ## Setup
 
 ### 1. Persiapan Bot Telegram
+
 1. Chat @BotFather di Telegram
 2. Ketik `/newbot` dan ikuti instruksi
 3. Simpan token yang diberikan
 
 ### 2. Setup Google Sheets API
+
 1. Buka [Google Cloud Console](https://console.cloud.google.com)
 2. Buat project baru atau gunakan yang ada
 3. Enable Google Sheets API
@@ -60,7 +62,9 @@ Bot Telegram untuk mencatat pengeluaran yang otomatis tersimpan ke Google Sheets
 6. Deploy!
 
 ### 4. Set Webhook
+
 Setelah deploy berhasil, set webhook URL di kode (baris 276):
+
 ```python
 webhook_url=f"https://your-app-name.onrender.com/{bot_token}"
 ```
@@ -69,14 +73,21 @@ webhook_url=f"https://your-app-name.onrender.com/{bot_token}"
 
 - `BOT_TOKEN`: Token dari @BotFather
 - `SPREADSHEET_ID`: ID spreadsheet dari URL Google Sheets
-- `GOOGLE_CREDENTIALS_JSON`: Seluruh isi file JSON credentials sebagai string
+- **Pilih salah satu cara berikut untuk credentials Google:**
+  - `GOOGLE_CREDENTIALS_JSON`: Seluruh isi file JSON credentials sebagai string
+  - **Atau**:
+    - `GOOGLE_PRIVATE_KEY`
+    - `GOOGLE_CLIENT_EMAIL`
+    - `GOOGLE_PROJECT_ID`
 
 ## Cara Mendapatkan Spreadsheet ID
 
 Dari URL Google Sheets:
+
 ```
 https://docs.google.com/spreadsheets/d/1ABC123DEF456GHI789/edit#gid=0
 ```
+
 Ambil bagian: `1ABC123DEF456GHI789`
 
 ## Perintah Bot
@@ -88,13 +99,20 @@ Ambil bagian: `1ABC123DEF456GHI789`
 
 ## Struktur Google Sheets
 
-Bot akan membuat worksheet "Pengeluaran" dengan kolom:
-- Tanggal
-- Waktu  
-- Jumlah
-- Keterangan
-- Kategori
-- User
+- Bot akan membuat worksheet utama "Pengeluaran" **dan** worksheet terpisah untuk setiap user Telegram secara otomatis.
+- Setiap worksheet memiliki kolom:
+  - Tanggal
+  - Waktu
+  - Jumlah
+  - Keterangan
+  - Kategori
+  - User
+
+## Fitur Interaktif
+
+- Setelah mencatat pengeluaran, bot akan mengirim tombol:
+  - 📄 **Buka Google Sheet**: langsung menuju spreadsheet Anda
+  - 📊 **Lihat Ringkasan**: menampilkan ringkasan bulan berjalan
 
 ## Local Development
 
@@ -102,6 +120,8 @@ Bot akan membuat worksheet "Pengeluaran" dengan kolom:
 2. Isi dengan credentials yang sesuai
 3. Install dependencies: `pip install -r requirements.txt`
 4. Jalankan: `python bot.py`
+
+- Untuk development lokal, Anda bisa menggunakan [ngrok](https://ngrok.com/) dan set environment variable `NGROK_URL` agar webhook Telegram mengarah ke server lokal Anda.
 
 ## Troubleshooting
 
