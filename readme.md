@@ -6,20 +6,11 @@ Bot Telegram untuk mencatat pengeluaran pribadi yang otomatis tersimpan ke Googl
 
 - 📝 **Smart Input**: Format bebas seperti "beli beras 50rb", "makan siang 25ribu"
 - 🤖 **Auto Detection**: Deteksi jumlah uang dan kategorisasi otomatis
-- � **OAuth 2.0**: Login dengan Google Account pribadi user
+- 🔐 **OAuth 2.0**: Login dengan Google Account pribadi user
 - 📊 **Personal Sheets**: Setiap user punya Google Sheet di Drive sendiri
 - 📅 **Monthly Worksheets**: Worksheet terpisah per bulan (Januari 2025, Februari 2025, dll)
-- � **Smart Analytics**: Ringkasan bulanan dengan breakdown kategori
+- 📈 **Smart Analytics**: Ringkasan bulanan dengan breakdown kategori
 - 🌍 **Indonesian Localized**: Format tanggal dan bahasa Indonesia
-
-## 🆕 What's New in Refactored Version
-
-- 🏗️ **Modular Architecture**: Kode dipecah menjadi 8+ files yang mudah maintain
-- ✅ **85%+ Test Coverage**: Comprehensive automated testing
-- � **Complete Documentation**: Extensive docs dan migration guides
-- ⚡ **Better Performance**: 18% faster startup, 7% lower memory usage
-- 🔧 **Enhanced Parsing**: Support format 15.000.000 dan decimal amounts
-- 🚀 **Developer Friendly**: Easy to extend dan modify
 
 ## 📊 Format Input yang Didukung
 
