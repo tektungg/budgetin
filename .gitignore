@@ -2,3 +2,4 @@
 .venv/
 ngrok.exe
 user_credentials.pkl
+__pycache__/
