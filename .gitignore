@@ -1,3 +1,4 @@
 .env
 .venv/
 ngrok.exe
+user_credentials.pkl
