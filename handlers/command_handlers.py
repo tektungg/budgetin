@@ -8,10 +8,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_trac
     user_name = update.effective_user.first_name or update.effective_user.username or "Unknown"
     
     if expense_tracker.is_user_authenticated(user_id):
-        welcome_text = f"""
+        if not expense_tracker.has_balance_set(user_id):
+            # User authenticated but no balance set
+            welcome_text = f"""
+🤖 *Selamat datang kembali, {user_name}!*
+
+Bot Budgetin Anda sudah terhubung dengan Google, tapi Anda belum mengatur saldo awal.
+
+💰 *Set saldo awal terlebih dahulu:*
+Kirim pesan berupa angka saldo Anda, contoh:
+• `1000000` (untuk Rp 1.000.000)
+• `500ribu` atau `500rb`
+• `2juta`
+
+📊 Setelah mengatur saldo, Anda bisa mulai mencatat pengeluaran dan saldo akan otomatis ter-tracking!
+            """
+        else:
+            current_balance = expense_tracker.get_user_balance(user_id)
+            welcome_text = f"""
 🤖 *Selamat datang kembali, {user_name}!*
 
 Bot Budgetin Anda sudah siap digunakan!
+
+💳 *Saldo saat ini:* Rp {current_balance:,}
 
 📝 *Cara mencatat pengeluaran:*
 Kirim pesan dengan format bebas, contoh:
@@ -26,7 +45,7 @@ Kirim pesan dengan format bebas, contoh:
 • /help - Bantuan lengkap
 
 ✨ Data Anda tersimpan otomatis di Google Sheet pribadi dengan worksheet terpisah per bulan!
-        """
+            """
     else:
         welcome_text = f"""
 🤖 *Selamat datang di Budgetin Bot, {user_name}!*
@@ -58,7 +77,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • /logout - Keluar dari akun Google  
 • /sheet - Buka Google Sheet Anda
 
-📝 *Cara mencatat pengeluaran:*
+� *Fitur Saldo:*
+• Set saldo awal setelah login pertama kali
+• /saldo - Lihat saldo saat ini dan isi saldo
+• Saldo otomatis berkurang setiap pengeluaran
+• Tampil di ringkasan dan Google Sheet
+
+�📝 *Cara mencatat pengeluaran:*
 Kirim pesan dengan format bebas yang mengandung jumlah uang:
 • "beli sayur 15rb"
 • "isi bensin 50000" 
@@ -80,12 +105,14 @@ Kirim pesan dengan format bebas yang mengandung jumlah uang:
 • Entertainment (nonton, game, cafe)
 
 📊 *Fitur laporan:*
-• /ringkasan - Ringkasan bulan ini
+• /ringkasan - Ringkasan bulan ini dengan saldo
+• /balance - Kelola saldo Anda
 • /kategori - Lihat semua kategori
 
 ✨ *Keunggulan:*
 • Google Sheet pribadi di Drive Anda
 • Worksheet terpisah per bulan otomatis
+• Tracking saldo otomatis di setiap transaksi
 • Data aman dan terkontrol penuh oleh Anda
     """
     await update.message.reply_text(help_text, parse_mode='Markdown')
@@ -157,3 +184,45 @@ async def sheet(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_trac
         await update.message.reply_text(
             "❌ Google Sheet tidak ditemukan. Silakan /logout dan /login ulang."
         )
+
+async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_tracker):
+    """Balance command handler"""
+    user_id = update.effective_user.id
+    
+    if not expense_tracker.is_user_authenticated(user_id):
+        await update.message.reply_text(
+            "❌ Anda belum login. Gunakan /login terlebih dahulu."
+        )
+        return
+    
+    if not expense_tracker.has_balance_set(user_id):
+        await update.message.reply_text(
+            "💰 Anda belum mengatur saldo. Silakan kirim angka saldo Anda untuk memulai."
+        )
+        return
+    
+    current_balance = expense_tracker.get_user_balance(user_id)
+    
+    response = f"""
+💳 *Saldo Anda Saat Ini*
+
+💰 Rp {current_balance:,}
+
+💡 *Tips:*
+• Gunakan tombol "Isi Saldo" untuk menambah saldo
+• Saldo otomatis berkurang setiap pencatatan pengeluaran
+• Lihat history saldo lengkap di Google Sheet Anda
+    """
+    
+    keyboard = [
+        [InlineKeyboardButton("💰 Isi Saldo", callback_data="add_balance")],
+        [InlineKeyboardButton("📊 Buka Google Sheet", 
+         url=f"https://docs.google.com/spreadsheets/d/{expense_tracker.user_spreadsheets.get(str(user_id))}/edit")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        response,
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )

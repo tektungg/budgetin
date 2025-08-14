@@ -10,7 +10,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from config import Config
 from models.expense_tracker import ExpenseTracker
 from handlers.command_handlers import (
-    start, help_command, summary_command, categories_command, sheet
+    start, help_command, summary_command, categories_command, sheet, balance_command
 )
 from handlers.auth_handlers import login, logout
 from handlers.expense_handlers import handle_expense, button_callback
@@ -78,6 +78,9 @@ async def sheet_wrapper(update: Update, context):
 async def summary_wrapper(update: Update, context):
     await summary_command(update, context, expense_tracker)
 
+async def balance_wrapper(update: Update, context):
+    await balance_command(update, context, expense_tracker)
+
 async def expense_wrapper(update: Update, context):
     await handle_expense(update, context, expense_tracker)
 
@@ -105,6 +108,7 @@ async def setup_bot():
     bot_application.add_handler(CommandHandler("logout", logout_wrapper))
     bot_application.add_handler(CommandHandler("sheet", sheet_wrapper))
     bot_application.add_handler(CommandHandler("ringkasan", summary_wrapper))
+    bot_application.add_handler(CommandHandler("balance", balance_wrapper))
     bot_application.add_handler(CommandHandler("kategori", categories_command))
     
     # Add callback query handler for buttons

@@ -29,6 +29,7 @@ class ExpenseTracker:
         # Store user credentials in memory (in production, use database)
         self.user_credentials = {}
         self.user_spreadsheets = {}  # Store spreadsheet IDs per user
+        self.user_balances = {}  # Store user balances
         
         # Load saved credentials if exists
         self.load_user_credentials()
@@ -39,7 +40,8 @@ class ExpenseTracker:
             with open(Config.USER_CREDENTIALS_FILE, 'wb') as f:
                 pickle.dump({
                     'credentials': self.user_credentials,
-                    'spreadsheets': self.user_spreadsheets
+                    'spreadsheets': self.user_spreadsheets,
+                    'balances': self.user_balances
                 }, f)
         except Exception as e:
             logger.error(f"Error saving credentials: {e}")
@@ -51,6 +53,7 @@ class ExpenseTracker:
                 data = pickle.load(f)
                 self.user_credentials = data.get('credentials', {})
                 self.user_spreadsheets = data.get('spreadsheets', {})
+                self.user_balances = data.get('balances', {})
         except FileNotFoundError:
             pass
         except Exception as e:
@@ -209,20 +212,20 @@ class ExpenseTracker:
                 return ws
             except gspread.exceptions.WorksheetNotFound:
                 # Create new worksheet
-                ws = spreadsheet.add_worksheet(ws_name, rows=1000, cols=6)
+                ws = spreadsheet.add_worksheet(ws_name, rows=1000, cols=7)
                 
                 # Add headers
-                headers = ['Tanggal', 'Waktu', 'Jumlah', 'Keterangan', 'Kategori', 'Notes']
-                ws.update('A1:F1', [headers])
+                headers = ['Tanggal', 'Waktu', 'Jumlah', 'Keterangan', 'Kategori', 'Notes', 'Saldo']
+                ws.update('A1:G1', [headers])
                 
                 # Format headers
-                ws.format('A1:F1', {
+                ws.format('A1:G1', {
                     "backgroundColor": {"red": 0.2, "green": 0.6, "blue": 0.9},
                     "textFormat": {"bold": True, "foregroundColor": {"red": 1, "green": 1, "blue": 1}}
                 })
                 
                 # Set column widths
-                ws.columns_auto_resize(0, 5)
+                ws.columns_auto_resize(0, 6)
                 
                 return ws
                 
@@ -244,17 +247,20 @@ class ExpenseTracker:
             if not ws:
                 return False, "Could not access your Google Sheet. Please login again."
             
+            # Update balance
+            new_balance = self.subtract_balance(user_id, amount)
+            
             # Prepare row data
             date_str = format_tanggal_indo(now.strftime('%Y-%m-%d'))
             time_str = now.strftime('%H:%M:%S')
-            row = [date_str, time_str, amount, description, category, '']
+            row = [date_str, time_str, amount, description, category, '', new_balance]
             
             # Add to worksheet
             ws.append_row(row)
             
             # Format the new row
             last_row = len(ws.get_all_values())
-            ws.format(f'A{last_row}:F{last_row}', {
+            ws.format(f'A{last_row}:G{last_row}', {
                 "borders": {
                     "top": {"style": "SOLID", "width": 1},
                     "bottom": {"style": "SOLID", "width": 1},
@@ -298,7 +304,8 @@ class ExpenseTracker:
             
             ws_name = get_month_worksheet_name(year, month)
             response = f"📊 *Ringkasan Pengeluaran {ws_name}*\n\n"
-            response += f"💰 Total: Rp {total:,}\n"
+            response += f"💰 Total pengeluaran: Rp {total:,}\n"
+            response += f"💳 Saldo saat ini: Rp {self.get_user_balance(user_id):,}\n"
             response += f"📝 Jumlah transaksi: {count}\n"
             
             if count > 0:
@@ -318,3 +325,32 @@ class ExpenseTracker:
     def is_user_authenticated(self, user_id):
         """Check if user is authenticated"""
         return str(user_id) in self.user_credentials and str(user_id) in self.user_spreadsheets
+
+    def set_user_balance(self, user_id, balance):
+        """Set initial balance for user"""
+        self.user_balances[str(user_id)] = balance
+        self.save_user_credentials()
+
+    def get_user_balance(self, user_id):
+        """Get current balance for user"""
+        return self.user_balances.get(str(user_id), 0)
+
+    def add_balance(self, user_id, amount):
+        """Add amount to user balance"""
+        current_balance = self.get_user_balance(user_id)
+        new_balance = current_balance + amount
+        self.user_balances[str(user_id)] = new_balance
+        self.save_user_credentials()
+        return new_balance
+
+    def subtract_balance(self, user_id, amount):
+        """Subtract amount from user balance"""
+        current_balance = self.get_user_balance(user_id)
+        new_balance = current_balance - amount
+        self.user_balances[str(user_id)] = new_balance
+        self.save_user_credentials()
+        return new_balance
+
+    def has_balance_set(self, user_id):
+        """Check if user has set their balance"""
+        return str(user_id) in self.user_balances

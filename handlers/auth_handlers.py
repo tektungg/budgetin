@@ -69,34 +69,30 @@ async def handle_oauth_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             spreadsheet_id = expense_tracker.create_user_spreadsheet(user_id, user_name)
 
             if spreadsheet_id:
-                sheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
-
+                # Set flag to indicate user needs to set balance
+                context.user_data['needs_balance_setup'] = True
+                context.user_data['user_name'] = user_name
+                
                 success_text = f"""
 ✅ *Login berhasil dan Google Sheet sudah dibuat!*
 
 🎉 Selamat, {user_name}! Bot sudah terhubung dengan akun Google Anda.
 
-📊 Google Sheet pribadi Anda: [Klik di sini]({sheet_url})
+� *Langkah selanjutnya: Set Saldo Awal*
+Sebelum mulai mencatat pengeluaran, silakan masukkan saldo awal Anda.
 
-📅 *Fitur worksheet per bulan:*
-Bot akan otomatis membuat worksheet baru setiap bulan dengan nama seperti "Januari 2025", "Februari 2025", dst.
+� *Cara input saldo:*
+Kirim pesan berupa angka saldo Anda, contoh:
+• `1000000` (untuk Rp 1.000.000)  
+• `500000` (untuk Rp 500.000)
+• `2000000` (untuk Rp 2.000.000)
 
-🚀 *Mulai mencatat pengeluaran:*
-Kirim pesan seperti: `beli sayur 15rb`, `isi bensin 50k`, dll.
-
-Gunakan /help untuk melihat semua fitur!
+📊 Setelah set saldo, Google Sheet Anda akan dilengkapi dengan kolom tracking saldo!
                 """
-
-                keyboard = [
-                    [InlineKeyboardButton("📊 Buka Google Sheet", url=sheet_url)],
-                    [InlineKeyboardButton("📋 Lihat Bantuan", callback_data="show_help")]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
 
                 await loading_msg.edit_text(
                     success_text,
-                    parse_mode='Markdown',
-                    reply_markup=reply_markup
+                    parse_mode='Markdown'
                 )
             else:
                 await loading_msg.edit_text(
@@ -127,9 +123,86 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_tra
         del expense_tracker.user_credentials[str(user_id)]
     if str(user_id) in expense_tracker.user_spreadsheets:
         del expense_tracker.user_spreadsheets[str(user_id)]
+    if str(user_id) in expense_tracker.user_balances:
+        del expense_tracker.user_balances[str(user_id)]
     
     expense_tracker.save_user_credentials()
     
     await update.message.reply_text(
         "✅ Anda telah logout dari Google Account. Gunakan /login untuk masuk kembali."
     )
+
+async def handle_balance_setup(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_tracker: ExpenseTracker):
+    """Handle balance setup after login"""
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    
+    # Check if this is for balance setup
+    if not context.user_data.get('needs_balance_setup', False):
+        return False  # Not handling balance setup
+    
+    try:
+        # Parse balance amount
+        balance = int(text.replace('.', '').replace(',', '').replace('rb', '000').replace('ribu', '000').replace('juta', '000000').replace('k', '000'))
+        
+        if balance < 0:
+            await update.message.reply_text(
+                "❌ Saldo tidak boleh negatif. Silakan masukkan angka yang benar."
+            )
+            return True
+        
+        # Set user balance
+        expense_tracker.set_user_balance(user_id, balance)
+        
+        # Clear setup flag
+        context.user_data['needs_balance_setup'] = False
+        user_name = context.user_data.get('user_name', 'User')
+        
+        # Get sheet URL
+        spreadsheet_id = expense_tracker.user_spreadsheets.get(str(user_id))
+        sheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+        
+        success_text = f"""
+✅ *Saldo awal berhasil diset!*
+
+💰 *Saldo Anda:* Rp {balance:,}
+
+🎉 Setup selesai, {user_name}! Bot sudah siap digunakan.
+
+🚀 *Mulai mencatat pengeluaran:*
+Kirim pesan seperti: `beli sayur 15rb`, `isi bensin 50k`, dll.
+
+📊 *Fitur saldo:*
+• Saldo akan otomatis berkurang setiap pengeluaran
+• Tampil di ringkasan bulanan  
+• Bisa top up saldo kapan saja dengan tombol
+
+Gunakan /help untuk melihat semua fitur!
+        """
+        
+        keyboard = [
+            [InlineKeyboardButton("📊 Buka Google Sheet", url=sheet_url)],
+            [InlineKeyboardButton("📋 Lihat Bantuan", callback_data="show_help")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            success_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+        
+        return True
+        
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Format saldo tidak valid.\n\n"
+            "💡 *Contoh format yang benar:*\n"
+            "• `1000000` (untuk Rp 1.000.000)\n"  
+            "• `500000` (untuk Rp 500.000)\n"
+            "• `2000000` (untuk Rp 2.000.000)\n"
+            "• `1juta` atau `500ribu`\n\n"
+            "Silakan coba lagi dengan angka saja atau format yang didukung.",
+            parse_mode='Markdown'
+        )
+        return True

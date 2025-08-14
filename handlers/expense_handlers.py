@@ -4,7 +4,7 @@ from telegram.ext import ContextTypes
 
 from utils.text_utils import extract_amount, classify_category, get_description
 from utils.date_utils import format_tanggal_indo, get_month_worksheet_name, get_jakarta_now
-from handlers.auth_handlers import handle_oauth_code
+from handlers.auth_handlers import handle_oauth_code, handle_balance_setup
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,14 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
 
     # Try to handle as OAuth code first (let user login tanpa harus /login ulang)
     if await handle_oauth_code(update, context, expense_tracker):
+        return
+    
+    # Try to handle balance setup
+    if await handle_balance_setup(update, context, expense_tracker):
+        return
+    
+    # Try to handle add balance
+    if await handle_add_balance(update, context, expense_tracker):
         return
 
     # Check if user is authenticated
@@ -30,6 +38,21 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
             parse_mode='Markdown',
             reply_markup=reply_markup
         )
+        return
+    
+    # Check if user has set balance
+    if not expense_tracker.has_balance_set(user_id):
+        await update.message.reply_text(
+            "💰 *Anda perlu mengatur saldo awal terlebih dahulu.*\n\n"
+            "Silakan masukkan saldo awal Anda:\n\n"
+            "💡 *Contoh:*\n"
+            "• `1000000` (untuk Rp 1.000.000)\n"
+            "• `500ribu` atau `500rb`\n"  
+            "• `2juta`\n\n"
+            "Kirim angka saja atau dengan format yang didukung.",
+            parse_mode='Markdown'
+        )
+        context.user_data['needs_balance_setup'] = True
         return
 
     # Extract amount from message
@@ -67,6 +90,7 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
         now = get_jakarta_now()
         tanggal_indo = format_tanggal_indo(now.strftime('%Y-%m-%d'))
         month_name = get_month_worksheet_name(now.year, now.month)
+        current_balance = expense_tracker.get_user_balance(user_id)
 
         response = f"""
 ✅ *Pengeluaran berhasil dicatat!*
@@ -77,6 +101,8 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
 📅 *Tanggal:* {tanggal_indo}
 📊 *Worksheet:* {month_name}
 
+💳 *Sisa Saldo:* Rp {current_balance:,}
+
 ✨ Tersimpan ke Google Sheet pribadi Anda!
         """
 
@@ -86,6 +112,7 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
 
         keyboard = [
             [InlineKeyboardButton("📊 Buka Google Sheet", url=sheet_url)],
+            [InlineKeyboardButton("💰 Isi Saldo", callback_data="add_balance")],
             [InlineKeyboardButton("📈 Lihat Ringkasan", callback_data="show_summary")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -110,6 +137,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, ex
         await login(query, context, expense_tracker)
         return
     
+    if query.data == "add_balance":
+        if not expense_tracker.is_user_authenticated(user_id):
+            await query.message.reply_text(
+                "❌ Anda perlu login terlebih dahulu. Gunakan /login"
+            )
+            return
+            
+        context.user_data['adding_balance'] = True
+        await query.message.reply_text(
+            "💰 *Isi Saldo*\n\n"
+            "Masukkan jumlah saldo yang ingin Anda tambahkan:\n\n"
+            "💡 *Contoh:*\n"
+            "• `100000` (untuk menambah Rp 100.000)\n"
+            "• `500ribu` atau `500rb`\n"
+            "• `1juta`\n\n"
+            "Kirim angka saja atau dengan format yang didukung.",
+            parse_mode='Markdown'
+        )
+        return
+    
     if query.data == "show_summary":
         if not expense_tracker.is_user_authenticated(user_id):
             await query.message.reply_text(
@@ -129,3 +176,62 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, ex
     elif query.data == "show_help":
         from handlers.command_handlers import help_command
         await help_command(query, context)
+
+async def handle_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_tracker):
+    """Handle adding balance"""
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    
+    # Check if this is for adding balance
+    if not context.user_data.get('adding_balance', False):
+        return False  # Not handling balance addition
+    
+    try:
+        # Parse balance amount
+        amount = int(text.replace('.', '').replace(',', '').replace('rb', '000').replace('ribu', '000').replace('juta', '000000').replace('k', '000'))
+        
+        if amount <= 0:
+            await update.message.reply_text(
+                "❌ Jumlah tidak boleh nol atau negatif. Silakan masukkan angka yang benar."
+            )
+            return True
+        
+        # Add balance
+        new_balance = expense_tracker.add_balance(user_id, amount)
+        
+        # Clear flag
+        context.user_data['adding_balance'] = False
+        
+        response = f"""
+✅ *Saldo berhasil ditambahkan!*
+
+💰 *Ditambahkan:* Rp {amount:,}
+💳 *Saldo baru:* Rp {new_balance:,}
+
+🎉 Saldo Anda telah diperbarui!
+        """
+        
+        keyboard = [
+            [InlineKeyboardButton("📈 Lihat Ringkasan", callback_data="show_summary")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            response,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+        
+        return True
+        
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Format jumlah tidak valid.\n\n"
+            "💡 *Contoh format yang benar:*\n"
+            "• `100000` (untuk Rp 100.000)\n"
+            "• `500ribu` atau `500rb`\n"
+            "• `1juta`\n\n"
+            "Silakan coba lagi dengan angka saja atau format yang didukung.",
+            parse_mode='Markdown'
+        )
+        return True
