@@ -78,10 +78,10 @@ async def handle_oauth_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
 🎉 Selamat, {user_name}! Bot sudah terhubung dengan akun Google Anda.
 
-� *Langkah selanjutnya: Set Saldo Awal*
+➡️ *Langkah selanjutnya: Set Saldo Awal*
 Sebelum mulai mencatat pengeluaran, silakan masukkan saldo awal Anda.
 
-� *Cara input saldo:*
+💡 *Cara input saldo:*
 Kirim pesan berupa angka saldo Anda, contoh:
 • `1000000` (untuk Rp 1.000.000)  
 • `500000` (untuk Rp 500.000)

@@ -7,6 +7,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 import pickle
 from datetime import datetime
+import calendar
 
 from config import Config
 from utils.date_utils import get_month_worksheet_name, format_tanggal_indo, get_jakarta_now
@@ -309,7 +310,10 @@ class ExpenseTracker:
             response += f"📝 Jumlah transaksi: {count}\n"
             
             if count > 0:
-                response += f"📈 Rata-rata per transaksi: Rp {total//count:,}\n\n"
+                # Calculate average per day in the month
+                days_in_month = calendar.monthrange(year, month)[1]
+                avg_per_day = total / days_in_month
+                response += f"📈 Pengeluaran rata-rata per hari: Rp {avg_per_day:,.0f}\n\n"
             
             response += "*Berdasarkan Kategori:*\n"
             for cat, amount in sorted(categories.items(), key=lambda x: x[1], reverse=True):
