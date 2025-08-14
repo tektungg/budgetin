@@ -1,16 +1,76 @@
 # 🤖 Budgetin Bot - Personal Expense Tracker
 
-Bot Telegram untuk mencatat pengeluaran pribadi yang otomatis tersimpan ke Google Sheets dengan OAuth 2.0 authentication. Setiap user memiliki Google Sheet pribadi di Drive mereka sendiri.
+Bot Telegram untuk mencatat pengeluaran pribadi yang otomatis tersimpan ke Google Sheets dengan OAuth 2.0 authentication. Setiap user memiliki Google Sheet pribadi di Drive mereka sendiri dengan fitur tracking saldo otomatis.
 
 ## ✨ Features
 
 - 📝 **Smart Input**: Format bebas seperti "beli beras 50rb", "makan siang 25ribu"
 - 🤖 **Auto Detection**: Deteksi jumlah uang dan kategorisasi otomatis
+- 💳 **Balance Tracking**: Set saldo awal, tracking otomatis, dan top-up kapan saja
 - 🔐 **OAuth 2.0**: Login dengan Google Account pribadi user
-- 📊 **Personal Sheets**: Setiap user punya Google Sheet di Drive sendiri
+- 📊 **Personal Sheets**: Setiap user punya Google Sheet di Drive sendiri dengan kolom saldo
 - 📅 **Monthly Worksheets**: Worksheet terpisah per bulan (Januari 2025, Februari 2025, dll)
-- 📈 **Smart Analytics**: Ringkasan bulanan dengan breakdown kategori
+- 📈 **Smart Analytics**: Ringkasan bulanan dengan saldo dan pengeluaran rata-rata per hari
+- 💳 **Interactive Buttons**: Button untuk isi saldo dan akses cepat fitur
 - 🌍 **Indonesian Localized**: Format tanggal dan bahasa Indonesia
+
+## 💳 Balance Features
+
+### 🎯 Balance Tracking Flow
+
+1. **First Login**: Set initial balance (e.g., `1000000` for Rp 1 million)
+2. **Record Expense**: Balance automatically reduces with each transaction
+3. **View Balance**: Use `/balance` command or check monthly summary  
+4. **Top-up Balance**: Click "💰 Isi Saldo" button or use `/balance` command
+5. **Monitor Daily**: See average daily spending in monthly summary
+
+### 📱 Balance Response Examples
+
+**After Recording Expense:**
+```
+✅ Pengeluaran berhasil dicatat!
+
+💰 Jumlah: Rp 15,000
+📝 Keterangan: beli sayur
+📂 Kategori: Daily Needs
+📅 Tanggal: Rabu, 14 Agustus 2025
+📊 Worksheet: Agustus 2025
+
+💳 Sisa Saldo: Rp 985,000
+
+✨ Tersimpan ke Google Sheet pribadi Anda!
+
+[📊 Buka Google Sheet] [💰 Isi Saldo] [📈 Lihat Ringkasan]
+```
+
+**Monthly Summary with Balance:**
+```
+📊 Ringkasan Pengeluaran Agustus 2025
+
+💰 Total pengeluaran: Rp 150,000
+💳 Saldo saat ini: Rp 850,000
+📝 Jumlah transaksi: 10
+📈 Pengeluaran rata-rata per hari: Rp 4,839
+
+*Berdasarkan Kategori:*
+• Daily Needs: Rp 75,000 (50.0%)
+• Transportation: Rp 50,000 (33.3%)  
+• Utilities: Rp 25,000 (16.7%)
+```
+
+**Balance Command Response:**
+```
+💳 Saldo Anda Saat Ini
+
+💰 Rp 850,000
+
+💡 Tips:
+• Gunakan tombol "Isi Saldo" untuk menambah saldo
+• Saldo otomatis berkurang setiap pencatatan pengeluaran  
+• Lihat history saldo lengkap di Google Sheet Anda
+
+[💰 Isi Saldo] [📊 Buka Google Sheet]
+```
 
 ## 📊 Format Input yang Didukung
 
@@ -60,7 +120,7 @@ Edit `.env` with your credentials:
 BOT_TOKEN=your_telegram_bot_token
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
 GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
-OAUTH_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
+OAUTH_REDIRECT_URI=http://localhost:8080
 ```
 
 4. **Run the Bot**
@@ -137,24 +197,38 @@ python run_tests.py
 2. Bot: Provides Google OAuth link
 3. User: Clicks link, grants permissions
 4. User: Sends authorization code to bot
-5. Bot: Creates personal Google Sheet in user's Drive
+5. **Bot: Prompts for initial balance setup**
+6. **User: Sets initial balance (e.g., "1000000" for Rp 1 million)**
+7. Bot: Creates personal Google Sheet in user's Drive with balance column
 
-### 💰 Recording Expenses
+### 💰 Balance Management
+
+**Initial Setup:**
+- Set your starting balance after first login
+- Format: `1000000`, `1juta`, `500ribu`, `500rb`
+
+**Top-up Balance:**
+- Use "💰 Isi Saldo" button after recording expenses
+- Or use `/balance` command anytime
+- Same format as initial setup
+
+### 💸 Recording Expenses
 
 Simply send messages like:
 
-- `beli sayur 15rb`
-- `isi bensin 50k`
-- `makan siang warteg 12ribu`
-- `bayar listrik 200.000`
+- `beli sayur 15rb` → Balance automatically reduced
+- `isi bensin 50k` → Shows remaining balance
+- `makan siang warteg 12ribu` → Interactive buttons appear
+- `bayar listrik 200.000` → Option to top-up balance
 
 ### 📊 Available Commands
 
 - `/start` - Welcome message dan setup info
 - `/login` - Login dengan Google Account
-- `/logout` - Logout dari Google Account
+- `/logout` - Logout dari Google Account  
+- `/balance` - Lihat saldo saat ini dan isi saldo
 - `/help` - Bantuan lengkap semua fitur
-- `/ringkasan` - Ringkasan pengeluaran bulan ini
+- `/ringkasan` - Ringkasan pengeluaran bulan ini dengan saldo
 - `/kategori` - Lihat semua kategori yang tersedia
 - `/sheet` - Buka Google Sheet pribadi Anda
 
@@ -165,6 +239,19 @@ Simply send messages like:
 - **📁 Folder**: "Budgetin" di Google Drive user
 - **📊 Sheet**: "Budgetin - [Username]"
 - **📋 Worksheets**: Per bulan (Januari 2025, Februari 2025, dll)
+- **💰 Balance**: Tracked in memory and persisted to local file
+
+### Local Data Storage
+
+- **📄 user_credentials.pkl**: Stores OAuth tokens, spreadsheet IDs, dan user balances
+- **🔐 Format**: Encrypted pickle file containing:
+  ```python
+  {
+      'credentials': {user_id: oauth_credentials},
+      'spreadsheets': {user_id: spreadsheet_id}, 
+      'balances': {user_id: current_balance}
+  }
+  ```
 
 ### Worksheet Columns
 
@@ -176,6 +263,7 @@ Simply send messages like:
 | Keterangan | Description              | sayur bayam           |
 | Kategori   | Auto-classified category | Daily Needs           |
 | Notes      | Additional notes (empty) | -                     |
+| **Saldo**  | **Remaining balance**    | **950000**            |
 
 ## 🚀 Deployment
 
@@ -268,6 +356,19 @@ This README contains all the documentation you need to get started with Budgetin
 - ✅ Verify Google APIs are enabled
 - ✅ Check user has Google Drive space
 
+**Balance/Saldo tidak tersimpan**
+
+- ✅ Ensure user completed initial balance setup after login
+- ✅ Check user_credentials.pkl file exists and readable
+- ✅ Verify balance format (numbers only, or with rb/ribu/juta suffix)
+- ✅ Test with `/balance` command to check current balance
+
+**Saldo tidak berkurang setelah pencatatan**
+
+- ✅ Check balance was set initially (`/balance` to verify)
+- ✅ Ensure expense amount is detected correctly
+- ✅ Verify Google Sheet has 7 columns including "Saldo"
+
 **Amount parsing tidak akurat**
 
 - ✅ Check supported formats in documentation
@@ -331,9 +432,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## 📞 Support
 
 - 🐛 **Issues**: [GitHub Issues](https://github.com/tektungg/budgetin/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/tektungg/budgetin/discussions)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/tektungg/budgetin/discussions)  
 - 📧 **Email**: Create an issue for support
+- 💰 **Balance Issues**: Check troubleshooting section first
 
 ---
 
-Made with ❤️ for personal expense tracking in Indonesia 🇮🇩
+Made with ❤️ for personal expense tracking with balance management in Indonesia 🇮🇩
