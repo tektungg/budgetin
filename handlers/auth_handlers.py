@@ -36,8 +36,8 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_trac
 
 1. Klik tombol di bawah untuk login ke Google
 2. Berikan izin akses ke Google Sheets dan Drive
-3. Copy kode yang muncul
-4. Kirim kode tersebut ke bot ini
+3. Setelah login, kode autorisasi akan ditampilkan otomatis di halaman
+4. Copy dan kirim kode tersebut ke bot ini
 
 *Catatan:* Bot tidak akan menyimpan password Anda, hanya token akses untuk Google Sheets.
     """

@@ -13,7 +13,7 @@ class Config:
     # Google OAuth Configuration
     GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
     GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
-    OAUTH_REDIRECT_URI = os.getenv('OAUTH_REDIRECT_URI', 'urn:ietf:wg:oauth:2.0:oob')
+    OAUTH_REDIRECT_URI = os.getenv('OAUTH_REDIRECT_URI', 'http://localhost:8080')
     
     # OAuth Scopes
     OAUTH_SCOPES = [
