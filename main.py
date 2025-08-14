@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import threading
+import sys
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
@@ -14,6 +15,9 @@ from handlers.command_handlers import (
 )
 from handlers.auth_handlers import login, logout
 from handlers.expense_handlers import handle_expense, button_callback
+from utils.config_validator import ConfigValidator
+from utils.date_utils import get_jakarta_now
+from datetime import datetime
 
 # Setup logging
 logging.basicConfig(
@@ -29,8 +33,44 @@ expense_tracker = ExpenseTracker()
 
 @flask_app.route('/', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
-    return "Budgetin Bot is running!", 200
+    """Enhanced health check endpoint"""
+    try:
+        health_status = {
+            'status': 'healthy',
+            'service': 'Budgetin Bot',
+            'version': '1.0.0',
+            'timestamp': get_jakarta_now().isoformat(),
+            'checks': {
+                'bot_initialized': bot_application is not None,
+                'config_valid': ConfigValidator.validate()[0],
+                'active_users': len(expense_tracker.user_credentials) if expense_tracker else 0,
+                'environment': {
+                    'has_bot_token': bool(Config.BOT_TOKEN),
+                    'has_google_oauth': bool(Config.GOOGLE_CLIENT_ID and Config.GOOGLE_CLIENT_SECRET),
+                    'port': Config.PORT
+                }
+            }
+        }
+        
+        # Check if all critical components are working
+        all_healthy = all([
+            health_status['checks']['bot_initialized'],
+            health_status['checks']['config_valid']
+        ])
+        
+        status_code = 200 if all_healthy else 503
+        if not all_healthy:
+            health_status['status'] = 'unhealthy'
+        
+        return health_status, status_code
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            'status': 'error',
+            'message': str(e),
+            'timestamp': datetime.now().isoformat()
+        }, 500
 
 @flask_app.route(f'/{Config.BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
@@ -142,11 +182,27 @@ def get_webhook_url():
         return f"https://{hostname}/{Config.BOT_TOKEN}"
 
 def main():
-    """Main function to run the bot"""
+    """Main function to run the bot with configuration validation"""
+    
+    # Validate configuration before starting
+    print("🚀 Starting Budgetin Bot...")
+    is_valid = ConfigValidator.print_status()
+    
+    if not is_valid:
+        print("\n❌ Configuration validation failed. Please fix the errors above.")
+        sys.exit(1)
+    
+    print("✅ Configuration validated successfully!")
+    
     def setup_bot_thread():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(setup_bot())
+        try:
+            loop.run_until_complete(setup_bot())
+            print("✅ Bot setup completed successfully!")
+        except Exception as e:
+            logger.error(f"Failed to setup bot: {e}")
+            sys.exit(1)
     
     bot_thread = threading.Thread(target=setup_bot_thread)
     bot_thread.daemon = True
@@ -157,7 +213,12 @@ def main():
     time.sleep(3)
     
     # Start Flask app
-    flask_app.run(host='0.0.0.0', port=Config.PORT, debug=False)
+    try:
+        print(f"🌐 Starting Flask server on port {Config.PORT}")
+        flask_app.run(host='0.0.0.0', port=Config.PORT, debug=False)
+    except Exception as e:
+        logger.error(f"Failed to start Flask app: {e}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()

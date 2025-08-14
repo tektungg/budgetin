@@ -13,6 +13,8 @@ Bot Telegram untuk mencatat pengeluaran pribadi yang otomatis tersimpan ke Googl
 - 📈 **Smart Analytics**: Ringkasan bulanan dengan saldo dan pengeluaran rata-rata per hari
 - 💳 **Interactive Buttons**: Button untuk isi saldo dan akses cepat fitur
 - 🌍 **Indonesian Localized**: Format tanggal dan bahasa Indonesia
+- 🛡️ **Enhanced Reliability**: Retry mechanisms, rate limiting, dan error recovery
+- 🔍 **Smart Monitoring**: Health checks dan configuration validation
 
 ## 💳 Balance Features
 

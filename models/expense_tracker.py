@@ -8,9 +8,11 @@ from googleapiclient.discovery import build
 import pickle
 from datetime import datetime
 import calendar
+import time
 
 from config import Config
 from utils.date_utils import get_month_worksheet_name, format_tanggal_indo, get_jakarta_now
+from utils.error_handlers import retry_on_error, GoogleSheetsErrorHandler, rate_limiter, validate_user_input
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +128,7 @@ class ExpenseTracker:
                 return None
         return creds
 
+    @retry_on_error(max_retries=3, delay=2.0)
     def create_user_spreadsheet(self, user_id, user_name):
         """Create a new spreadsheet for user in their Google Drive, inside 'Budgetin' folder"""
         try:
@@ -235,7 +238,18 @@ class ExpenseTracker:
             return None
 
     def add_expense(self, user_id, amount, description, category):
-        """Add expense to user's monthly worksheet"""
+        """Add expense to user's monthly worksheet with enhanced error handling"""
+        
+        # Rate limiting check
+        allowed, message = rate_limiter.is_allowed(user_id)
+        if not allowed:
+            return False, message
+        
+        # Input validation
+        valid_input, validation_message = validate_user_input(description)
+        if not valid_input:
+            return False, validation_message
+            
         if amount <= 0:
             return False, "Amount must be greater than zero."
         
@@ -256,25 +270,35 @@ class ExpenseTracker:
             time_str = now.strftime('%H:%M:%S')
             row = [date_str, time_str, amount, description, category, '', new_balance]
             
-            # Add to worksheet
-            ws.append_row(row)
+            # Add to worksheet with retry mechanism
+            self._append_row_with_retry(ws, row)
             
             # Format the new row
-            last_row = len(ws.get_all_values())
-            ws.format(f'A{last_row}:G{last_row}', {
-                "borders": {
-                    "top": {"style": "SOLID", "width": 1},
-                    "bottom": {"style": "SOLID", "width": 1},
-                    "left": {"style": "SOLID", "width": 1},
-                    "right": {"style": "SOLID", "width": 1}
-                }
-            })
+            try:
+                last_row = len(ws.get_all_values())
+                ws.format(f'A{last_row}:G{last_row}', {
+                    "borders": {
+                        "top": {"style": "SOLID", "width": 1},
+                        "bottom": {"style": "SOLID", "width": 1},
+                        "left": {"style": "SOLID", "width": 1},
+                        "right": {"style": "SOLID", "width": 1}
+                    }
+                })
+            except Exception as format_error:
+                # Formatting error shouldn't fail the entire operation
+                logger.warning(f"Failed to format row: {format_error}")
             
             return True, "Successfully saved"
             
         except Exception as e:
             logger.error(f"Error adding expense: {e}")
-            return False, f"Failed to save: {str(e)}"
+            success, error_message = GoogleSheetsErrorHandler.handle_api_error(e)
+            return success, error_message
+    
+    @retry_on_error(max_retries=3, delay=1.0)
+    def _append_row_with_retry(self, worksheet, row):
+        """Append row to worksheet with retry mechanism"""
+        worksheet.append_row(row)
 
     def get_monthly_summary(self, user_id, year=None, month=None):
         """Get monthly summary for user"""
@@ -345,7 +369,7 @@ class ExpenseTracker:
         new_balance = current_balance + amount
         self.user_balances[str(user_id)] = new_balance
         self.save_user_credentials()
-        return new_balance
+        return new_balance  
 
     def subtract_balance(self, user_id, amount):
         """Subtract amount from user balance"""
