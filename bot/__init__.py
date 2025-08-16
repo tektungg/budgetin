@@ -103,7 +103,7 @@ def create_handler_wrappers(expense_tracker):
         await start(update, context, expense_tracker)
 
     async def help_wrapper(update: Update, context):
-        await help_command(update, context, expense_tracker)
+        await help_command(update, context)
 
     async def login_wrapper(update: Update, context):
         await login(update, context, expense_tracker)
@@ -136,7 +136,7 @@ def create_handler_wrappers(expense_tracker):
         await alerts_command(update, context)
 
     async def categories_wrapper(update: Update, context):
-        await categories_command(update, context, expense_tracker)
+        await categories_command(update, context)
 
     # Combined handlers
     async def budget_input_wrapper(update: Update, context):
