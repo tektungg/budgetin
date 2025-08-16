@@ -406,15 +406,91 @@ async def process_telegram_update(update_data):
         logger.error(f"Error processing update: {e}")
 
 async def error_handler(update: Update, context):
-    """Global error handler"""
+    """Enhanced global error handler with timeout handling"""
+    error_msg = str(context.error)
+    
+    # Log the error with more details
     logger.error(f"Exception while handling update: {context.error}")
+    
+    # Handle different types of errors
+    if "timed out" in error_msg.lower() or "timeout" in error_msg.lower():
+        logger.warning("Timeout error detected - user may need to retry")
+        
+        # Try to send a helpful message to user if possible
+        if update and update.effective_chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="⏰ *Operasi timeout*\n\n"
+                         "Proses memakan waktu lebih lama dari biasanya. "
+                         "Silakan coba lagi dalam beberapa saat.\n\n"
+                         "💡 *Tips:*\n"
+                         "• Pastikan koneksi internet stabil\n"
+                         "• Tunggu 1-2 menit lalu coba lagi\n"
+                         "• Jika masalah berlanjut, gunakan /help",
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.error(f"Failed to send timeout message: {e}")
+    
+    elif "rate" in error_msg.lower() or "quota" in error_msg.lower():
+        logger.warning("Rate limit or quota error detected")
+        
+        if update and update.effective_chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="⚠️ *Google API sedang sibuk*\n\n"
+                         "Terlalu banyak permintaan dalam waktu singkat. "
+                         "Silakan tunggu 1-2 menit lalu coba lagi.",
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.error(f"Failed to send rate limit message: {e}")
+    
+    elif "network" in error_msg.lower() or "connection" in error_msg.lower():
+        logger.warning("Network connection error detected")
+        
+        if update and update.effective_chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="🌐 *Masalah koneksi*\n\n"
+                         "Terjadi masalah koneksi jaringan. "
+                         "Pastikan internet stabil dan coba lagi.",
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.error(f"Failed to send network error message: {e}")
+    
+    else:
+        # Generic error
+        logger.error(f"Unhandled error type: {context.error}")
+        
+        if update and update.effective_chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="❌ *Terjadi kesalahan*\n\n"
+                         "Silakan coba lagi. Jika masalah berlanjut, "
+                         "gunakan /help untuk bantuan.",
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.error(f"Failed to send generic error message: {e}")
 
 async def initialize_bot():
     """Initialize Telegram bot with handlers"""
     global bot_application
     
-    # Build bot application
-    bot_application = Application.builder().token(Config.BOT_TOKEN).build()
+    # Build bot application with custom timeout settings
+    bot_application = (Application.builder()
+                      .token(Config.BOT_TOKEN)
+                      .read_timeout(30)  # 30 seconds for reading responses
+                      .write_timeout(30)  # 30 seconds for sending requests  
+                      .connect_timeout(20)  # 20 seconds for initial connection
+                      .pool_timeout(20)  # 20 seconds for connection pool
+                      .build())
     
     # Wrapper functions to pass expense_tracker
     async def start_wrapper(update: Update, context):

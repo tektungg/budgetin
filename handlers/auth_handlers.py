@@ -49,7 +49,7 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_trac
     )
 
 async def handle_oauth_code(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_tracker: ExpenseTracker):
-    """Handle OAuth authorization code"""
+    """Handle OAuth authorization code with improved timeout handling"""
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name or update.effective_user.username or "Unknown"
     code = update.message.text.strip()
@@ -58,17 +58,28 @@ async def handle_oauth_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if not (len(code) > 20 and ('/' in code or '-' in code or '_' in code)):
         return False  # Not an OAuth code
 
-    loading_msg = await update.message.reply_text("⏳ Memverifikasi kode dan membuat Google Sheet...")
+    loading_msg = await update.message.reply_text("⏳ Memverifikasi kode autorisasi...")
 
     try:
-        # Exchange code for credentials
+        # Step 1: Exchange code for credentials
+        await loading_msg.edit_text("🔐 Memverifikasi kode autorisasi...")
         success = expense_tracker.exchange_code_for_credentials(code, user_id)
 
         if success:
-            # Create user's spreadsheet
+            # Step 2: Create user's spreadsheet with progress updates
+            await loading_msg.edit_text("📁 Membuat folder Budgetin di Google Drive...")
+            
+            # Add a small delay to show progress
+            import asyncio
+            await asyncio.sleep(1)
+            
+            await loading_msg.edit_text("📊 Membuat Google Sheet baru...")
             spreadsheet_id = expense_tracker.create_user_spreadsheet(user_id, user_name)
 
             if spreadsheet_id:
+                await loading_msg.edit_text("✅ Menyiapkan worksheet bulanan...")
+                await asyncio.sleep(1)
+                
                 # Set flag to indicate user needs to set balance
                 context.user_data['needs_balance_setup'] = True
                 context.user_data['user_name'] = user_name
@@ -107,11 +118,32 @@ Kirim pesan berupa angka saldo Anda, contoh:
 
     except Exception as e:
         logger.error(f"OAuth error: {e}")
-        await loading_msg.edit_text(
-            "❌ Terjadi kesalahan saat memproses login.\n\n"
-            "Pastikan Anda mengirim *kode* (bukan seluruh URL) yang didapat setelah login Google.\n"
-            "Jika masalah berlanjut, silakan coba /logout lalu /login ulang."
-        )
+        error_msg = str(e).lower()
+        
+        if "timeout" in error_msg or "timed out" in error_msg:
+            await loading_msg.edit_text(
+                "⏰ *Proses login timeout*\n\n"
+                "Operasi memakan waktu lebih lama dari biasanya. "
+                "Hal ini bisa terjadi karena:\n"
+                "• Koneksi internet lambat\n"
+                "• Google API sedang sibuk\n\n"
+                "💡 *Solusi:*\n"
+                "• Tunggu 1-2 menit lalu coba /login ulang\n"
+                "• Pastikan koneksi internet stabil\n"
+                "• Coba lagi dengan kode yang sama jika masih berlaku"
+            )
+        elif "quota" in error_msg or "rate" in error_msg:
+            await loading_msg.edit_text(
+                "⚠️ *Google API sedang sibuk*\n\n"
+                "Terlalu banyak permintaan dalam waktu singkat. "
+                "Silakan tunggu 2-3 menit lalu coba lagi dengan /login."
+            )
+        else:
+            await loading_msg.edit_text(
+                "❌ Terjadi kesalahan saat memproses login.\n\n"
+                "Pastikan Anda mengirim *kode* (bukan seluruh URL) yang didapat setelah login Google.\n"
+                "Jika masalah berlanjut, silakan coba /logout lalu /login ulang."
+            )
 
     return True  # Indicates this was handled as OAuth code
 

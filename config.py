@@ -29,6 +29,11 @@ class Config:
     # File paths
     USER_CREDENTIALS_FILE = 'user_credentials.pkl'
     
+    # Timeout configurations (in seconds)
+    GOOGLE_API_TIMEOUT = 30  # Timeout for Google API operations
+    TELEGRAM_REQUEST_TIMEOUT = 30  # Timeout for Telegram requests
+    SPREADSHEET_CREATION_TIMEOUT = 45  # Longer timeout for spreadsheet creation
+    
     # Categories for expense classification
     CATEGORIES = {
         'daily_needs': ['makan', 'minum', 'beras', 'sayur', 'buah', 'daging', 'ikan', 'telur', 'susu', 'roti', 'nasi', 'lauk', 'snack', 'cemilan', 'grocery', 'belanja', 'pasar', 'supermarket'],

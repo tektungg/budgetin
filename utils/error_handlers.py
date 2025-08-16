@@ -5,8 +5,8 @@ from typing import Callable, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
-def retry_on_error(max_retries: int = 3, delay: float = 1.0):
-    """Decorator untuk retry operasi yang gagal"""
+def retry_on_error(max_retries: int = 3, delay: float = 1.0, timeout_delay: float = 5.0):
+    """Enhanced decorator untuk retry operasi yang gagal dengan timeout handling"""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs) -> Any:
@@ -17,11 +17,26 @@ def retry_on_error(max_retries: int = 3, delay: float = 1.0):
                     return func(*args, **kwargs)
                 except Exception as e:
                     last_exception = e
-                    logger.warning(f"Attempt {attempt + 1} failed for {func.__name__}: {e}")
+                    error_str = str(e).lower()
+                    
+                    # Log attempt with error type
+                    if "timeout" in error_str or "timed out" in error_str:
+                        logger.warning(f"Timeout on attempt {attempt + 1} for {func.__name__}: {e}")
+                    elif "quota" in error_str or "rate" in error_str:
+                        logger.warning(f"Rate limit on attempt {attempt + 1} for {func.__name__}: {e}")
+                    else:
+                        logger.warning(f"Attempt {attempt + 1} failed for {func.__name__}: {e}")
                     
                     if attempt < max_retries - 1:
-                        # Exponential backoff
-                        sleep_time = delay * (2 ** attempt)
+                        # Different backoff strategies for different error types
+                        if "timeout" in error_str or "timed out" in error_str:
+                            sleep_time = timeout_delay * (attempt + 1)  # Linear backoff for timeouts
+                        elif "quota" in error_str or "rate" in error_str:
+                            sleep_time = delay * (3 ** attempt)  # Aggressive backoff for rate limits
+                        else:
+                            sleep_time = delay * (2 ** attempt)  # Exponential backoff for others
+                        
+                        logger.info(f"Waiting {sleep_time:.1f}s before retry {attempt + 2}/{max_retries}")
                         time.sleep(sleep_time)
                     else:
                         logger.error(f"All {max_retries} attempts failed for {func.__name__}")

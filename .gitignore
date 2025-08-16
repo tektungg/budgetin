@@ -2,4 +2,6 @@
 .venv/
 ngrok.exe
 user_credentials.pkl
+user_budgets.pkl
 __pycache__/
+.pytest_cache

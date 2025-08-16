@@ -82,8 +82,8 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
     # Show loading message
     loading_msg = await update.message.reply_text("⏳ Menyimpan ke Google Sheet...")
 
-    # Add to spreadsheet
-    success, message = expense_tracker.add_expense(user_id, amount, description, category)
+    # Add to spreadsheet with smart features
+    success, message, smart_insights = expense_tracker.add_expense_with_smart_features(user_id, amount, description, category)
 
     if success:
         # Get current date in Indonesian format
@@ -99,22 +99,58 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
 📝 *Keterangan:* {description}
 📂 *Kategori:* {category}
 📅 *Tanggal:* {tanggal_indo}
+💳 *Saldo tersisa:* Rp {current_balance:,}
 📊 *Worksheet:* {month_name}
+"""
 
-💳 *Sisa Saldo:* Rp {current_balance:,}
-
-✨ Tersimpan ke Google Sheet pribadi Anda!
-        """
-
-        # Get user's spreadsheet URL
-        spreadsheet_id = expense_tracker.user_spreadsheets.get(str(user_id))
-        sheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
-
+        # Add smart insights to response
+        alerts = []
+        
+        # Budget Alert
+        if smart_insights.get('budget_alert'):
+            budget_alert = smart_insights['budget_alert']
+            alerts.append(f"\n{budget_alert['message']}")
+        
+        # Anomaly Detection
+        if smart_insights.get('anomaly_detection'):
+            anomaly_report = smart_insights['anomaly_detection']
+            for anomaly in anomaly_report['anomalies']:
+                if anomaly.get('message'):
+                    alerts.append(f"\n{anomaly['message']}")
+        
+        # Spending Velocity Alert
+        if smart_insights.get('spending_velocity_alert'):
+            velocity_alert = smart_insights['spending_velocity_alert']
+            alerts.append(f"\n{velocity_alert['message']}")
+        
+        # Weekend Alert
+        if smart_insights.get('weekend_alert'):
+            weekend_alert = smart_insights['weekend_alert']
+            alerts.append(f"\n{weekend_alert['message']}")
+        
+        # Add alerts to response
+        if alerts:
+            response += "\n⚠️ *Smart Alerts:*"
+            for alert in alerts[:2]:  # Limit to 2 alerts to avoid too long message
+                response += alert
+        
+        # Create interactive buttons
         keyboard = [
-            [InlineKeyboardButton("📊 Buka Google Sheet", url=sheet_url)],
-            [InlineKeyboardButton("💰 Isi Saldo", callback_data="add_balance")],
-            [InlineKeyboardButton("📈 Lihat Ringkasan", callback_data="show_summary")]
+            [
+                InlineKeyboardButton("📊 Ringkasan Bulan", callback_data="summary_month"),
+                InlineKeyboardButton("💰 Lihat Saldo", callback_data="check_balance")
+            ],
+            [
+                InlineKeyboardButton("📈 Budget Status", callback_data=f"budget_status_{category.replace(' ', '_')}"),
+                InlineKeyboardButton("🔍 Insights", callback_data="view_insights")
+            ]
         ]
+        
+        # Add budget suggestion if no budget set for this category
+        budget_status = expense_tracker.get_budget_status_for_category(user_id, category)
+        if budget_status.get('status') == 'no_budget':
+            keyboard.append([InlineKeyboardButton("💡 Set Budget", callback_data=f"suggest_budget_{category.replace(' ', '_')}")])
+        
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await loading_msg.edit_text(response, parse_mode='Markdown', reply_markup=reply_markup)

@@ -35,7 +35,7 @@ Bot Budgetin Anda sudah siap digunakan!
 📝 *Cara mencatat pengeluaran:*
 Kirim pesan dengan format bebas, contoh:
 • "beli beras 50rb"
-• "makan siang 25000"
+• "makan siang 25000"  
 • "bensin motor 30k"
 
 📊 *Perintah tersedia:*
@@ -43,6 +43,11 @@ Kirim pesan dengan format bebas, contoh:
 • /sheet - Buka Google Sheet Anda
 • /logout - Keluar dari akun Google
 • /help - Bantuan lengkap
+
+🆕 *FITUR BARU - Smart Features:*
+• /budget - Budget planning per kategori
+• /insights - Spending analytics & insights
+• /alerts - Smart alerts sistem
 
 ✨ Data Anda tersimpan otomatis di Google Sheet pribadi dengan worksheet terpisah per bulan!
             """
