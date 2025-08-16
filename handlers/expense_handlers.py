@@ -1,4 +1,6 @@
 import logging
+import threading
+import queue
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
@@ -82,17 +84,56 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
     # Show loading message
     loading_msg = await update.message.reply_text("⏳ Menyimpan ke Google Sheet...")
 
-    # Add to spreadsheet with smart features
-    success, message, smart_insights = expense_tracker.add_expense_with_smart_features(user_id, amount, description, category)
+    # First attempt with 5-second timeout using threading
+    success = False
+    message = ""
+    smart_insights = {}
+    
+    try:
+        import threading
+        import queue
+        
+        def run_operation():
+            """Run expense operation in separate thread"""
+            try:
+                result = expense_tracker.add_expense_with_smart_features(user_id, amount, description, category)
+                result_queue.put(('success', result))
+            except Exception as e:
+                result_queue.put(('error', str(e)))
+        
+        # Create queue for thread communication
+        result_queue = queue.Queue()
+        
+        # Start operation in separate thread
+        operation_thread = threading.Thread(target=run_operation)
+        operation_thread.daemon = True
+        operation_thread.start()
+        
+        # Wait for result with 5-second timeout
+        operation_thread.join(timeout=5.0)
+        
+        if operation_thread.is_alive():
+            # Thread is still running - timeout occurred
+            raise TimeoutError("Operation timed out after 5 seconds")
+        
+        # Get result from queue
+        if not result_queue.empty():
+            result_type, result_data = result_queue.get()
+            if result_type == 'success':
+                success, message, smart_insights = result_data
+            else:
+                raise Exception(result_data)
+        else:
+            raise Exception("No result received from operation")
+        
+        if success:
+            # Get current date in Indonesian format
+            now = get_jakarta_now()
+            tanggal_indo = format_tanggal_indo(now.strftime('%Y-%m-%d'))
+            month_name = get_month_worksheet_name(now.year, now.month)
+            current_balance = expense_tracker.get_user_balance(user_id)
 
-    if success:
-        # Get current date in Indonesian format
-        now = get_jakarta_now()
-        tanggal_indo = format_tanggal_indo(now.strftime('%Y-%m-%d'))
-        month_name = get_month_worksheet_name(now.year, now.month)
-        current_balance = expense_tracker.get_user_balance(user_id)
-
-        response = f"""
+            response = f"""
 ✅ *Pengeluaran berhasil dicatat!*
 
 💰 *Jumlah:* Rp {amount:,}
@@ -103,62 +144,192 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
 📊 *Worksheet:* {month_name}
 """
 
-        # Add smart insights to response
-        alerts = []
-        
-        # Budget Alert
-        if smart_insights.get('budget_alert'):
-            budget_alert = smart_insights['budget_alert']
-            alerts.append(f"\n{budget_alert['message']}")
-        
-        # Anomaly Detection
-        if smart_insights.get('anomaly_detection'):
-            anomaly_report = smart_insights['anomaly_detection']
-            for anomaly in anomaly_report['anomalies']:
-                if anomaly.get('message'):
-                    alerts.append(f"\n{anomaly['message']}")
-        
-        # Spending Velocity Alert
-        if smart_insights.get('spending_velocity_alert'):
-            velocity_alert = smart_insights['spending_velocity_alert']
-            alerts.append(f"\n{velocity_alert['message']}")
-        
-        # Weekend Alert
-        if smart_insights.get('weekend_alert'):
-            weekend_alert = smart_insights['weekend_alert']
-            alerts.append(f"\n{weekend_alert['message']}")
-        
-        # Add alerts to response
-        if alerts:
-            response += "\n⚠️ *Smart Alerts:*"
-            for alert in alerts[:2]:  # Limit to 2 alerts to avoid too long message
-                response += alert
-        
-        # Create interactive buttons
-        keyboard = [
-            [
-                InlineKeyboardButton("📊 Ringkasan Bulan", callback_data="summary_month"),
-                InlineKeyboardButton("💰 Lihat Saldo", callback_data="check_balance")
-            ],
-            [
-                InlineKeyboardButton("📈 Budget Status", callback_data=f"budget_status_{category.replace(' ', '_')}"),
-                InlineKeyboardButton("🔍 Insights", callback_data="view_insights")
+            # Add smart insights to response
+            alerts = []
+            
+            # Budget Alert
+            if smart_insights.get('budget_alert'):
+                budget_alert = smart_insights['budget_alert']
+                alerts.append(f"\n{budget_alert['message']}")
+            
+            # Anomaly Detection
+            if smart_insights.get('anomaly_detection'):
+                anomaly_report = smart_insights['anomaly_detection']
+                for anomaly in anomaly_report['anomalies']:
+                    if anomaly.get('message'):
+                        alerts.append(f"\n{anomaly['message']}")
+            
+            # Spending Velocity Alert
+            if smart_insights.get('spending_velocity_alert'):
+                velocity_alert = smart_insights['spending_velocity_alert']
+                alerts.append(f"\n{velocity_alert['message']}")
+            
+            # Weekend Alert
+            if smart_insights.get('weekend_alert'):
+                weekend_alert = smart_insights['weekend_alert']
+                alerts.append(f"\n{weekend_alert['message']}")
+            
+            # Add alerts to response
+            if alerts:
+                response += "\n⚠️ *Smart Alerts:*"
+                for alert in alerts[:2]:  # Limit to 2 alerts to avoid too long message
+                    response += alert
+            
+            # Create interactive buttons
+            keyboard = [
+                [
+                    InlineKeyboardButton("📊 Ringkasan Bulan", callback_data="summary_month"),
+                    InlineKeyboardButton("💰 Lihat Saldo", callback_data="check_balance")
+                ],
+                [
+                    InlineKeyboardButton("📈 Budget Status", callback_data=f"budget_status_{category.replace(' ', '_')}"),
+                    InlineKeyboardButton("🔍 Insights", callback_data="view_insights")
+                ]
             ]
-        ]
-        
-        # Add budget suggestion if no budget set for this category
-        budget_status = expense_tracker.get_budget_status_for_category(user_id, category)
-        if budget_status.get('status') == 'no_budget':
-            keyboard.append([InlineKeyboardButton("💡 Set Budget", callback_data=f"suggest_budget_{category.replace(' ', '_')}")])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Add budget suggestion if no budget set for this category
+            budget_status = expense_tracker.get_budget_status_for_category(user_id, category)
+            if budget_status.get('status') == 'no_budget':
+                keyboard.append([InlineKeyboardButton("💡 Set Budget", callback_data=f"suggest_budget_{category.replace(' ', '_')}")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await loading_msg.edit_text(response, parse_mode='Markdown', reply_markup=reply_markup)
-    else:
+            await loading_msg.edit_text(response, parse_mode='Markdown', reply_markup=reply_markup)
+        else:
+            await loading_msg.edit_text(
+                f"❌ Gagal menyimpan: {message}\n\n"
+                "Pastikan Anda sudah login dan Google Sheet Anda dapat diakses."
+            )
+    
+    except TimeoutError:
+        logger.warning(f"First attempt timed out after 5s for user {user_id}")
+        
+        # Retry message
         await loading_msg.edit_text(
-            f"❌ Gagal menyimpan: {message}\n\n"
-            "Pastikan Anda sudah login dan Google Sheet Anda dapat diakses."
+            "⏳ *Proses lebih lama dari biasanya...*\n\n"
+            "Sedang mencoba ulang (percobaan 2/2)...",
+            parse_mode='Markdown'
         )
+        
+        # Second attempt with 5-second timeout using same threading approach
+        try:
+            def run_retry_operation():
+                """Run retry operation in separate thread"""
+                try:
+                    result = expense_tracker.add_expense_with_smart_features(user_id, amount, description, category)
+                    retry_queue.put(('success', result))
+                except Exception as e:
+                    retry_queue.put(('error', str(e)))
+            
+            # Create queue for retry thread communication
+            retry_queue = queue.Queue()
+            
+            # Start retry operation in separate thread
+            retry_thread = threading.Thread(target=run_retry_operation)
+            retry_thread.daemon = True
+            retry_thread.start()
+            
+            # Wait for result with 5-second timeout
+            retry_thread.join(timeout=5.0)
+            
+            if retry_thread.is_alive():
+                # Second attempt also timed out
+                raise TimeoutError("Second attempt also timed out after 5 seconds")
+            
+            # Get result from retry queue
+            if not retry_queue.empty():
+                result_type, result_data = retry_queue.get()
+                if result_type == 'success':
+                    success, message, smart_insights = result_data
+                else:
+                    raise Exception(result_data)
+            else:
+                raise Exception("No result received from retry operation")
+            
+            if success:
+                # Same success handling as above
+                now = get_jakarta_now()
+                tanggal_indo = format_tanggal_indo(now.strftime('%Y-%m-%d'))
+                month_name = get_month_worksheet_name(now.year, now.month)
+                current_balance = expense_tracker.get_user_balance(user_id)
+
+                response = f"""
+✅ *Pengeluaran berhasil dicatat!* (percobaan ke-2)
+
+💰 *Jumlah:* Rp {amount:,}
+📝 *Keterangan:* {description}
+📂 *Kategori:* {category}
+📅 *Tanggal:* {tanggal_indo}
+💳 *Saldo tersisa:* Rp {current_balance:,}
+📊 *Worksheet:* {month_name}
+"""
+                
+                # Simple success message without complex features to avoid more timeouts
+                await loading_msg.edit_text(response, parse_mode='Markdown')
+            else:
+                await loading_msg.edit_text(
+                    f"❌ Gagal menyimpan setelah 2 percobaan: {message}\n\n"
+                    "Pastikan Anda sudah login dan Google Sheet Anda dapat diakses."
+                )
+        
+        except TimeoutError:
+            logger.error(f"Second attempt also timed out after 5s for user {user_id}")
+            await loading_msg.edit_text(
+                "❌ *Operasi gagal setelah 2 percobaan (masing-masing 5 detik)*\n\n"
+                "🔧 *Yang bisa Anda lakukan:*\n"
+                "• Tunggu 1-2 menit lalu coba lagi\n"
+                "• Pastikan koneksi internet stabil\n"
+                "• Cek apakah data sudah tersimpan dengan /ringkasan\n\n"
+                "⚙️ *Kemungkinan penyebab:*\n"
+                "• Google API sedang lambat\n"
+                "• Koneksi internet tidak stabil\n"
+                "• Spreadsheet Anda sedang sibuk\n\n"
+                "💡 Data mungkin sudah tersimpan meskipun ada timeout.",
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error in second attempt: {e}")
+            await loading_msg.edit_text(
+                "❌ Terjadi kesalahan pada percobaan kedua.\n\n"
+                "Silakan coba lagi dalam beberapa menit.",
+                parse_mode='Markdown'
+            )
+    
+    except Exception as e:
+        logger.error(f"Error in expense handling: {e}")
+        error_str = str(e).lower()
+        
+        if "timeout" in error_str or "timed out" in error_str:
+            await loading_msg.edit_text(
+                "⏰ *Operasi timeout*\n\n"
+                "Pencatatan pengeluaran memakan waktu terlalu lama.\n\n"
+                "💡 *Yang bisa Anda lakukan:*\n"
+                "• Cek apakah data sudah tersimpan dengan /ringkasan\n"
+                "• Tunggu 1-2 menit lalu coba lagi\n"
+                "• Pastikan koneksi internet stabil\n\n"
+                "⚙️ Data mungkin sudah tersimpan meskipun ada timeout.",
+                parse_mode='Markdown'
+            )
+        elif "quota" in error_str or "rate" in error_str:
+            await loading_msg.edit_text(
+                "⚠️ *Google API sedang sibuk*\n\n"
+                "Terlalu banyak permintaan dalam waktu singkat.\n"
+                "Silakan tunggu 2-3 menit lalu coba lagi.",
+                parse_mode='Markdown'
+            )
+        elif "network" in error_str or "connection" in error_str:
+            await loading_msg.edit_text(
+                "🌐 *Masalah koneksi*\n\n"
+                "Terjadi masalah koneksi jaringan.\n"
+                "Pastikan internet stabil dan coba lagi.",
+                parse_mode='Markdown'
+            )
+        else:
+            await loading_msg.edit_text(
+                "❌ Terjadi kesalahan saat memproses pengeluaran.\n\n"
+                "Silakan coba lagi. Jika masalah berlanjut, gunakan /help.",
+                parse_mode='Markdown'
+            )
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_tracker):
     """Handle button callbacks"""
