@@ -520,7 +520,6 @@ async def initialize_bot():
     async def sheet_wrapper(update: Update, context):
         await sheet(update, context, expense_tracker)
     
-    # NEW: Smart feature wrappers
     async def budget_wrapper(update: Update, context):
         await budget_command(update, context)
     
@@ -612,10 +611,6 @@ def main():
             print(f"🌐 Webhook URL: {get_webhook_url()}")
             print(f"🏥 Health check: http://localhost:{Config.PORT}/")
             print(f"📱 Bot is ready to receive messages!")
-            print(f"\n🆕 NEW COMMANDS:")
-            print(f"  /budget - Budget planning per kategori")
-            print(f"  /insights - Spending analytics & insights")
-            print(f"  /alerts - Smart alerts system")
             loop.run_forever()
         except KeyboardInterrupt:
             logger.info("Received interrupt signal, shutting down...")
