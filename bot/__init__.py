@@ -3,12 +3,26 @@ Bot initialization and setup for the Budgetin Telegram bot.
 Handles command registration, error handling, and bot lifecycle.
 """
 
+import os
 import logging
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
+from config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def get_webhook_url():
+    """Get webhook URL based on environment"""
+    if Config.PUBLIC_URL:
+        return f"{Config.PUBLIC_URL}/{Config.BOT_TOKEN}"
+    elif Config.NGROK_URL:
+        return f"{Config.NGROK_URL}/{Config.BOT_TOKEN}"
+    else:
+        # Default to Render hostname
+        hostname = os.getenv('RENDER_EXTERNAL_HOSTNAME', 'your-app-name.onrender.com')
+        return f"https://{hostname}/{Config.BOT_TOKEN}"
 
 
 async def error_handler(update: Update, context):
@@ -175,8 +189,16 @@ def create_handler_wrappers(expense_tracker):
 async def initialize_bot(bot_token, expense_tracker):
     """Initialize and configure the Telegram bot"""
     try:
-        # Create bot application
-        application = Application.builder().token(bot_token).build()
+        # Create bot application with custom timeout settings
+        application = (Application.builder()
+                      .token(bot_token)
+                      .read_timeout(40)      # 40s for reading responses (increased)
+                      .write_timeout(40)     # 40s for sending requests (increased)
+                      .connect_timeout(30)   # 30s for initial connection (increased)
+                      .pool_timeout(30)      # 30s for connection pool (increased)
+                      .get_updates_read_timeout(50)  # 50s for long polling
+                      .get_updates_write_timeout(50) # 50s for long polling writes
+                      .build())
         
         # Create handler wrappers
         handlers = create_handler_wrappers(expense_tracker)
@@ -204,6 +226,11 @@ async def initialize_bot(bot_token, expense_tracker):
         # Initialize application
         await application.initialize()
         await application.start()
+        
+        # Set webhook
+        webhook_url = get_webhook_url()
+        await application.bot.set_webhook(url=webhook_url)
+        logger.info(f"✅ Bot initialized with webhook: {webhook_url}")
         
         logger.info("✅ Bot initialized successfully")
         return application
