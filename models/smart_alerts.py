@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from models.budget_planner import BudgetPlanner
-from utils.date_utils import get_jakarta_now
+from utils.date_utils import get_jakarta_now, safe_datetime_compare, safe_datetime_subtract
 
 logger = logging.getLogger(__name__)
 
@@ -95,18 +95,15 @@ class SmartAlertSystem:
         
         for expense in recent_expenses:
             expense_time = expense.get('datetime', now)
-            # Handle timezone-naive datetime
-            if expense_time.tzinfo is None and now.tzinfo is not None:
-                # Convert naive datetime to timezone-aware
-                expense_time = expense_time.replace(tzinfo=now.tzinfo)
-            elif expense_time.tzinfo is not None and now.tzinfo is None:
-                # Convert aware datetime to naive
-                expense_time = expense_time.replace(tzinfo=None)
-                window_start = window_start.replace(tzinfo=None)
-            
-            if expense_time >= window_start:
-                recent_count += 1
-                recent_total += expense['amount']
+            # Handle timezone-naive datetime safely
+            try:
+                expense_time_safe, window_start_safe = safe_datetime_compare(expense_time, window_start)
+                if expense_time_safe >= window_start_safe:
+                    recent_count += 1
+                    recent_total += expense['amount']
+            except Exception as e:
+                logger.warning(f"Error comparing expense time in velocity alert: {e}")
+                continue
         
         # Alert if 3+ transactions in 2 hours with total > 500K
         if recent_count >= 3 and recent_total >= 500000:

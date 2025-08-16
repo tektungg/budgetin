@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, date
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 import calendar
-from utils.date_utils import get_jakarta_now, format_tanggal_indo
+from utils.date_utils import get_jakarta_now, format_tanggal_indo, safe_datetime_compare, safe_datetime_subtract
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +27,13 @@ class SpendingAnalytics:
         
         for expense in user_expenses:
             expense_date = expense.get('datetime', now)
-            # Handle timezone differences
-            if expense_date.tzinfo is None and now.tzinfo is not None:
-                expense_date = expense_date.replace(tzinfo=now.tzinfo)
-            elif expense_date.tzinfo is not None and now.tzinfo is None:
-                expense_date = expense_date.replace(tzinfo=None)
-                cutoff_date = cutoff_date.replace(tzinfo=None)
-                
-            if expense_date < cutoff_date:
+            # Handle timezone differences safely
+            try:
+                expense_date_safe, cutoff_date_safe = safe_datetime_compare(expense_date, cutoff_date)
+                if expense_date_safe < cutoff_date_safe:
+                    continue
+            except Exception as e:
+                logger.warning(f"Error comparing expense date: {e}")
                 continue
             
             month_key = expense_date.strftime('%Y-%m')
@@ -100,15 +99,14 @@ class SpendingAnalytics:
         recent_expenses = []
         for expense in user_expenses:
             expense_date = expense.get('datetime', now)
-            # Handle timezone differences
-            if expense_date.tzinfo is None and now.tzinfo is not None:
-                expense_date = expense_date.replace(tzinfo=now.tzinfo)
-            elif expense_date.tzinfo is not None and now.tzinfo is None:
-                expense_date = expense_date.replace(tzinfo=None)
-                cutoff_date = cutoff_date.replace(tzinfo=None)
-                
-            if expense_date >= cutoff_date:
-                recent_expenses.append(expense)
+            # Handle timezone differences safely
+            try:
+                expense_date_safe, cutoff_date_safe = safe_datetime_compare(expense_date, cutoff_date)
+                if expense_date_safe >= cutoff_date_safe:
+                    recent_expenses.append(expense)
+            except Exception as e:
+                logger.warning(f"Error comparing expense date in category insights: {e}")
+                continue
         
         if not recent_expenses:
             return {'error': f'No expenses in the last {period_days} days'}

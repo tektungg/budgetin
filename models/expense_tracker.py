@@ -625,26 +625,39 @@ class ExpenseTracker:
     
     def _is_potential_duplicate(self, user_id: str, amount: int, description: str) -> bool:
         """Check if this expense might be a duplicate of a recent one"""
-        from datetime import datetime, timedelta
+        from datetime import timedelta
+        from utils.date_utils import safe_datetime_subtract
         
         user_id_str = str(user_id)
-        current_time = datetime.now()
+        current_time = get_jakarta_now()
         
         # Clean up old entries (older than 5 minutes)
         if user_id_str in self.recent_expenses:
-            self.recent_expenses[user_id_str] = [
-                (amt, desc, timestamp) for amt, desc, timestamp in self.recent_expenses[user_id_str]
-                if current_time - timestamp < timedelta(minutes=5)
-            ]
+            filtered_expenses = []
+            for amt, desc, timestamp in self.recent_expenses[user_id_str]:
+                try:
+                    time_diff = safe_datetime_subtract(current_time, timestamp)
+                    if time_diff < timedelta(minutes=5):
+                        filtered_expenses.append((amt, desc, timestamp))
+                except Exception as e:
+                    logger.warning(f"Error comparing timestamps in duplicate check: {e}")
+                    # Skip this entry if there's a timestamp issue
+                    continue
+            
+            self.recent_expenses[user_id_str] = filtered_expenses
         
         # Check for duplicates in the last 2 minutes
         if user_id_str in self.recent_expenses:
             for recent_amount, recent_desc, timestamp in self.recent_expenses[user_id_str]:
-                time_diff = current_time - timestamp
-                if (time_diff < timedelta(minutes=2) and 
-                    recent_amount == amount and 
-                    recent_desc.lower().strip() == description.lower().strip()):
-                    return True
+                try:
+                    time_diff = safe_datetime_subtract(current_time, timestamp)
+                    if (time_diff < timedelta(minutes=2) and 
+                        recent_amount == amount and 
+                        recent_desc.lower().strip() == description.lower().strip()):
+                        return True
+                except Exception as e:
+                    logger.warning(f"Error comparing timestamps for duplicate detection: {e}")
+                    continue
         
         return False
     
