@@ -109,12 +109,12 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
         operation_thread.daemon = True
         operation_thread.start()
         
-        # Wait for result with 5-second timeout
-        operation_thread.join(timeout=5.0)
+        # Wait for result with 6-second timeout
+        operation_thread.join(timeout=6.0)
         
         if operation_thread.is_alive():
             # Thread is still running - timeout occurred
-            raise TimeoutError("Operation timed out after 5 seconds")
+            raise TimeoutError("Operation timed out after 6 seconds")
         
         # Get result from queue
         if not result_queue.empty():
@@ -202,7 +202,7 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
             )
     
     except TimeoutError:
-        logger.warning(f"First attempt timed out after 5s for user {user_id}")
+        logger.warning(f"First attempt timed out after 6s for user {user_id}")
         
         # Retry message
         await loading_msg.edit_text(
@@ -229,12 +229,12 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
             retry_thread.daemon = True
             retry_thread.start()
             
-            # Wait for result with 5-second timeout
-            retry_thread.join(timeout=5.0)
+            # Wait for result with 6-second timeout
+            retry_thread.join(timeout=6.0)
             
             if retry_thread.is_alive():
                 # Second attempt also timed out
-                raise TimeoutError("Second attempt also timed out after 5 seconds")
+                raise TimeoutError("Second attempt also timed out after 6 seconds")
             
             # Get result from retry queue
             if not retry_queue.empty():
@@ -273,9 +273,9 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
                 )
         
         except TimeoutError:
-            logger.error(f"Second attempt also timed out after 5s for user {user_id}")
+            logger.error(f"Second attempt also timed out after 6s for user {user_id}")
             await loading_msg.edit_text(
-                "❌ *Operasi gagal setelah 2 percobaan (masing-masing 5 detik)*\n\n"
+                "❌ *Operasi gagal setelah 2 percobaan (masing-masing 6 detik)*\n\n"
                 "🔧 *Yang bisa Anda lakukan:*\n"
                 "• Tunggu 1-2 menit lalu coba lagi\n"
                 "• Pastikan koneksi internet stabil\n"
