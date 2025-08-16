@@ -5,7 +5,7 @@ Bot Telegram untuk mencatat pengeluaran pribadi yang otomatis tersimpan ke Googl
 ## ✨ Features
 
 - 📝 **Smart Input**: Format bebas seperti "beli beras 50rb", "makan siang 25ribu"
-- 🤖 **Auto Detection**: Deteksi jumlah uang dan kategorisasi otomatis
+- 🤖 **AI Categorization**: Gemini AI untuk kategorisasi pengeluaran yang cerdas
 - 💳 **Balance Tracking**: Set saldo awal, tracking otomatis, dan top-up kapan saja
 - 🔐 **OAuth 2.0**: Login dengan Google Account pribadi user
 - 📊 **Personal Sheets**: Setiap user punya Google Sheet di Drive sendiri dengan kolom saldo
@@ -22,13 +22,14 @@ Bot Telegram untuk mencatat pengeluaran pribadi yang otomatis tersimpan ke Googl
 
 1. **First Login**: Set initial balance (e.g., `1000000` for Rp 1 million)
 2. **Record Expense**: Balance automatically reduces with each transaction
-3. **View Balance**: Use `/balance` command or check monthly summary  
+3. **View Balance**: Use `/balance` command or check monthly summary
 4. **Top-up Balance**: Click "💰 Isi Saldo" button or use `/balance` command
 5. **Monitor Daily**: See average daily spending in monthly summary
 
 ### 📱 Balance Response Examples
 
 **After Recording Expense:**
+
 ```
 ✅ Pengeluaran berhasil dicatat!
 
@@ -46,6 +47,7 @@ Bot Telegram untuk mencatat pengeluaran pribadi yang otomatis tersimpan ke Googl
 ```
 
 **Monthly Summary with Balance:**
+
 ```
 📊 Ringkasan Pengeluaran Agustus 2025
 
@@ -56,11 +58,12 @@ Bot Telegram untuk mencatat pengeluaran pribadi yang otomatis tersimpan ke Googl
 
 *Berdasarkan Kategori:*
 • Daily Needs: Rp 75,000 (50.0%)
-• Transportation: Rp 50,000 (33.3%)  
+• Transportation: Rp 50,000 (33.3%)
 • Utilities: Rp 25,000 (16.7%)
 ```
 
 **Balance Command Response:**
+
 ```
 💳 Saldo Anda Saat Ini
 
@@ -68,7 +71,7 @@ Bot Telegram untuk mencatat pengeluaran pribadi yang otomatis tersimpan ke Googl
 
 💡 Tips:
 • Gunakan tombol "Isi Saldo" untuk menambah saldo
-• Saldo otomatis berkurang setiap pencatatan pengeluaran  
+• Saldo otomatis berkurang setiap pencatatan pengeluaran
 • Lihat history saldo lengkap di Google Sheet Anda
 
 [💰 Isi Saldo] [📊 Buka Google Sheet]
@@ -82,14 +85,41 @@ Bot Telegram untuk mencatat pengeluaran pribadi yang otomatis tersimpan ke Googl
 - `15.000.000` (dengan pemisah titik)
 - `25,000` (dengan koma)
 
-## 🏷️ Kategori Otomatis
+## 🏷️ AI-Powered Kategorisasi
 
-- **Daily Needs**: makan, minum, beras, sayur, buah, grocery, belanja, pasar
-- **Transportation**: bensin, ojek, grab, gojek, taxi, bus, parkir, tol
-- **Utilities**: listrik, air, internet, wifi, pulsa, token, pln, indihome
-- **Health**: obat, dokter, rumah sakit, klinik, vitamin, medical
-- **Urgent**: darurat, urgent, mendadak, emergency
-- **Entertainment**: nonton, bioskop, game, musik, cafe, restaurant, netflix
+Bot sekarang menggunakan **Gemini AI** untuk kategorisasi pengeluaran yang lebih cerdas dan akurat:
+
+### 🤖 Kategori yang Didukung AI
+
+- **Daily Needs**: Kebutuhan sehari-hari (makanan, minuman, grocery)
+- **Transportation**: Transportasi (bensin, ojek, parkir, tol)
+- **Utilities**: Utilitas (listrik, air, internet, pulsa)
+- **Health**: Kesehatan (obat, dokter, rumah sakit)
+- **Urgent**: Darurat (emergency, mendadak)
+- **Entertainment**: Hiburan (nonton, cafe, game, jalan-jalan)
+- **Education**: Pendidikan (buku, kursus, sekolah)
+- **Shopping**: Belanja (pakaian, elektronik, non-grocery)
+- **Bills**: Tagihan (cicilan, asuransi, pajak)
+- **Other**: Lainnya (jika tidak masuk kategori lain)
+
+### 🧠 Keunggulan AI Categorization
+
+- **Context Aware**: Memahami konteks kalimat, bukan hanya kata kunci
+- **Natural Language**: Bisa memahami bahasa alami Indonesia
+- **Learning**: Semakin akurat seiring waktu
+- **Fallback**: Otomatis fallback ke rule-based jika AI tidak tersedia
+
+### 📝 Contoh Kategorisasi AI
+
+```
+"beli beras di pasar" → Daily Needs
+"isi bensin motor" → Transportation
+"bayar tagihan listrik" → Utilities
+"emergency ke dokter" → Health (urgent context)
+"langganan Netflix" → Entertainment
+"beli buku kuliah" → Education
+"cicilan motor" → Bills
+```
 
 ## 🚀 Quick Start
 
@@ -139,6 +169,16 @@ python main.py
 4. Create **OAuth 2.0 Client ID**:
    - Application type: **Desktop application**
    - Download JSON and get `client_id` and `client_secret`
+
+### Gemini AI Setup (untuk AI Categorization)
+
+1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click **"Create API Key"**
+4. Copy the generated API key
+5. Add to your `.env` file: `GEMINI_API_KEY=your_api_key_here`
+
+> **💡 Note**: Gemini API key is **optional**. If not provided, the bot will use rule-based categorization as fallback.
 
 ### Telegram Bot Setup
 
@@ -206,10 +246,12 @@ python run_tests.py
 ### 💰 Balance Management
 
 **Initial Setup:**
+
 - Set your starting balance after first login
 - Format: `1000000`, `1juta`, `500ribu`, `500rb`
 
 **Top-up Balance:**
+
 - Use "💰 Isi Saldo" button after recording expenses
 - Or use `/balance` command anytime
 - Same format as initial setup
@@ -227,7 +269,7 @@ Simply send messages like:
 
 - `/start` - Welcome message dan setup info
 - `/login` - Login dengan Google Account
-- `/logout` - Logout dari Google Account  
+- `/logout` - Logout dari Google Account
 - `/balance` - Lihat saldo saat ini dan isi saldo
 - `/help` - Bantuan lengkap semua fitur
 - `/ringkasan` - Ringkasan pengeluaran bulan ini dengan saldo
@@ -250,7 +292,7 @@ Simply send messages like:
   ```python
   {
       'credentials': {user_id: oauth_credentials},
-      'spreadsheets': {user_id: spreadsheet_id}, 
+      'spreadsheets': {user_id: spreadsheet_id},
       'balances': {user_id: current_balance}
   }
   ```
@@ -287,6 +329,7 @@ python main.py
 BOT_TOKEN=your_telegram_bot_token
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
 GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+GEMINI_API_KEY=your_gemini_api_key  # For AI categorization
 PORT=8080
 PUBLIC_URL=https://your-app.onrender.com  # optional
 ```
@@ -434,7 +477,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## 📞 Support
 
 - 🐛 **Issues**: [GitHub Issues](https://github.com/tektungg/budgetin/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/tektungg/budgetin/discussions)  
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/tektungg/budgetin/discussions)
 - 📧 **Email**: Create an issue for support
 - 💰 **Balance Issues**: Check troubleshooting section first
 

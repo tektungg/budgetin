@@ -38,7 +38,24 @@ def extract_amount(text):
     return None, None, None
 
 def classify_category(description):
-    """Classify expense into category"""
+    """
+    Classify expense into category using AI
+    
+    This function now uses Gemini AI for intelligent categorization.
+    Falls back to rule-based if AI is not available.
+    """
+    try:
+        from utils.ai_categorizer import classify_category_ai
+        return classify_category_ai(description)
+    except ImportError as e:
+        # Fallback to old rule-based method if AI dependencies not available
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"AI categorizer not available, using fallback: {e}")
+        return _classify_category_fallback(description)
+
+def _classify_category_fallback(description):
+    """Fallback rule-based classification (legacy method)"""
     description_lower = description.lower()
     
     for category, keywords in Config.CATEGORIES.items():

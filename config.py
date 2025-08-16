@@ -15,6 +15,9 @@ class Config:
     GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
     OAUTH_REDIRECT_URI = os.getenv('OAUTH_REDIRECT_URI', 'http://localhost:8080')
     
+    # Gemini AI Configuration
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+    
     # OAuth Scopes
     OAUTH_SCOPES = [
         'https://www.googleapis.com/auth/spreadsheets',

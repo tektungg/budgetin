@@ -15,5 +15,9 @@ GOOGLE_CLIENT_SECRET=your_google_client_secret
 # OAuth redirect URI (use this for Desktop application type)
 OAUTH_REDIRECT_URI=http://localhost:8080
 
+# Gemini AI API Key for intelligent expense categorization
+# Get from Google AI Studio: https://makersuite.google.com/app/apikey
+GEMINI_API_KEY=your_gemini_api_key_here
+
 # Alternative: Web application redirect URI (if you want custom callback)
 # OAUTH_REDIRECT_URI=https://your-app-name.onrender.com/oauth/callback
