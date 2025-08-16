@@ -1,6 +1,9 @@
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_tracker):
     """Start command handler"""
@@ -193,20 +196,24 @@ async def sheet(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_trac
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_tracker):
     """Balance command handler"""
     user_id = update.effective_user.id
+    logger.info(f"Balance command called by user {user_id}")
     
     if not expense_tracker.is_user_authenticated(user_id):
+        logger.warning(f"User {user_id} not authenticated for balance command")
         await update.message.reply_text(
             "❌ Anda belum login. Gunakan /login terlebih dahulu."
         )
         return
     
     if not expense_tracker.has_balance_set(user_id):
+        logger.info(f"User {user_id} has no balance set")
         await update.message.reply_text(
             "💰 Anda belum mengatur saldo. Silakan kirim angka saldo Anda untuk memulai."
         )
         return
     
     current_balance = expense_tracker.get_user_balance(user_id)
+    logger.info(f"Balance command successful for user {user_id}, balance: {current_balance}")
     
     response = f"""
 💳 *Saldo Anda Saat Ini*

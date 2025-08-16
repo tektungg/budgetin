@@ -364,7 +364,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, ex
         )
         return
     
-    if query.data == "show_summary":
+    if query.data == "show_summary" or query.data == "summary_month":
         if not expense_tracker.is_user_authenticated(user_id):
             await query.message.reply_text(
                 "❌ Anda perlu login terlebih dahulu. Gunakan /login"
@@ -377,12 +377,125 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, ex
             summary = expense_tracker.get_monthly_summary(user_id)
             await loading_message.edit_text(summary, parse_mode='Markdown')
         except Exception as e:
-            logger.error(f"Error in button_callback: {e}")
+            logger.error(f"Error in summary callback: {e}")
             await loading_message.edit_text("❌ Gagal mengambil ringkasan.")
+        return
     
-    elif query.data == "show_help":
+    if query.data == "check_balance":
+        if not expense_tracker.is_user_authenticated(user_id):
+            await query.message.reply_text(
+                "❌ Anda perlu login terlebih dahulu. Gunakan /login"
+            )
+            return
+            
+        if not expense_tracker.has_balance_set(user_id):
+            await query.message.reply_text(
+                "💰 Anda belum mengatur saldo. Silakan kirim angka saldo Anda untuk memulai."
+            )
+            return
+        
+        current_balance = expense_tracker.get_user_balance(user_id)
+        
+        response = f"""
+💳 *Saldo Anda Saat Ini*
+
+💰 Rp {current_balance:,}
+
+💡 *Tips:*
+• Gunakan tombol "Isi Saldo" untuk menambah saldo
+• Saldo otomatis berkurang setiap pencatatan pengeluaran
+• Lihat history saldo lengkap di Google Sheet Anda
+        """
+        
+        keyboard = [
+            [InlineKeyboardButton("💰 Isi Saldo", callback_data="add_balance")],
+            [InlineKeyboardButton("📊 Buka Google Sheet", 
+             url=f"https://docs.google.com/spreadsheets/d/{expense_tracker.user_spreadsheets.get(str(user_id))}/edit")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.reply_text(
+            response,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+        return
+    
+    if query.data == "view_insights":
+        # Import here to avoid circular import
+        from handlers.budget_handlers import insights_command
+        await insights_command(query, context)
+        return
+    
+    if query.data.startswith("budget_status_"):
+        # Extract category from callback data
+        category = query.data.replace("budget_status_", "").replace("_", " ")
+        
+        try:
+            from models.budget_planner import BudgetPlanner
+            budget_planner = BudgetPlanner()
+            
+            # Get budget status for this category
+            budgets = budget_planner.get_user_budgets(user_id)
+            if category in budgets:
+                budget_amount = budgets[category]
+                # Get spending for this category this month
+                spent = expense_tracker.get_category_spending_this_month(user_id, category)
+                remaining = budget_amount - spent
+                percentage = (spent / budget_amount * 100) if budget_amount > 0 else 0
+                
+                status_emoji = "🟢" if percentage <= 70 else "🟡" if percentage <= 90 else "🔴"
+                
+                response = f"""
+{status_emoji} *Budget Status: {category}*
+
+💰 *Budget:* Rp {budget_amount:,}
+💸 *Terpakai:* Rp {spent:,} ({percentage:.1f}%)
+💵 *Tersisa:* Rp {remaining:,}
+
+{'✅ Anda masih dalam batas budget!' if percentage <= 100 else '⚠️ Budget sudah terlampaui!'}
+                """
+            else:
+                response = f"❌ Budget untuk kategori '{category}' belum diatur.\n\nGunakan /budget untuk mengatur budget."
+                
+            await query.message.reply_text(response, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Error in budget_status callback: {e}")
+            await query.message.reply_text("❌ Gagal mengambil status budget.")
+        return
+    
+    if query.data.startswith("suggest_budget_"):
+        # Extract category from callback data
+        category = query.data.replace("suggest_budget_", "").replace("_", " ")
+        
+        try:
+            from models.budget_planner import BudgetPlanner
+            budget_planner = BudgetPlanner()
+            
+            # Get budget suggestion
+            suggestion = budget_planner.suggest_budget_for_category(user_id, category, expense_tracker)
+            
+            response = f"""
+💡 *Saran Budget: {category}*
+
+{suggestion}
+
+Gunakan /budget untuk mengatur budget Anda.
+            """
+            await query.message.reply_text(response, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Error in suggest_budget callback: {e}")
+            await query.message.reply_text("❌ Gagal memberikan saran budget.")
+        return
+    
+    if query.data == "show_help":
         from handlers.command_handlers import help_command
         await help_command(query, context)
+        return
+    
+    # If no specific handler found, log it
+    logger.warning(f"Unhandled callback data: {query.data}")
+    await query.message.reply_text("❌ Fungsi ini sedang dalam pengembangan.")
 
 async def handle_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE, expense_tracker):
     """Handle adding balance"""

@@ -210,9 +210,12 @@ async def initialize_bot(bot_token, expense_tracker):
         application.add_handler(CommandHandler("logout", handlers['logout_wrapper']))
         application.add_handler(CommandHandler("ringkasan", handlers['summary_wrapper']))
         application.add_handler(CommandHandler("saldo", handlers['balance_wrapper']))
+        application.add_handler(CommandHandler("balance", handlers['balance_wrapper']))  # Added
         application.add_handler(CommandHandler("sheet", handlers['sheet_wrapper']))
         application.add_handler(CommandHandler("budget", handlers['budget_wrapper']))
+        application.add_handler(CommandHandler("budgets", handlers['budget_wrapper']))  # Added
         application.add_handler(CommandHandler("insights", handlers['insights_wrapper']))
+        application.add_handler(CommandHandler("analytics", handlers['insights_wrapper']))  # Added
         application.add_handler(CommandHandler("alerts", handlers['alerts_wrapper']))
         application.add_handler(CommandHandler("kategori", handlers['categories_wrapper']))
         

@@ -17,6 +17,7 @@ async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /budget command - Budget management main menu"""
     try:
         user_id = update.effective_user.id
+        logger.info(f"Budget command called by user {user_id}")
         
         keyboard = [
             [
@@ -45,9 +46,14 @@ async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += "Pilih menu di bawah ini:"
         
         await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        logger.info(f"Budget command completed successfully for user {user_id}")
         
     except Exception as e:
         logger.error(f"Error in budget_command: {e}")
+        await update.message.reply_text(
+            "❌ Terjadi kesalahan saat menampilkan menu budget. Silakan coba lagi.",
+            parse_mode='Markdown'
+        )
         await update.message.reply_text("❌ Terjadi kesalahan. Silakan coba lagi.")
 
 async def insights_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -133,6 +139,8 @@ async def budget_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         user_id = update.effective_user.id
         data = query.data
         
+        logger.info(f"Processing budget callback: {data} for user {user_id}")
+        
         if data == "budget_set":
             await handle_budget_set(query, context)
         elif data == "budget_view":
@@ -153,10 +161,16 @@ async def budget_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             await handle_insights_callback(query, context)
         elif data.startswith("alerts_"):
             await handle_alerts_callback(query, context)
+        else:
+            logger.warning(f"Unhandled budget callback: {data}")
+            await query.message.reply_text("❌ Fungsi ini sedang dalam pengembangan.")
         
     except Exception as e:
         logger.error(f"Error in budget_callback_handler: {e}")
-        await query.edit_message_text("❌ Terjadi kesalahan. Silakan coba lagi.")
+        try:
+            await query.message.reply_text("❌ Terjadi kesalahan. Silakan coba lagi.")
+        except Exception as reply_error:
+            logger.error(f"Failed to send error message: {reply_error}")
 
 async def handle_budget_set(query, context):
     """Handle budget setting"""

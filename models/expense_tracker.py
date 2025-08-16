@@ -592,3 +592,27 @@ class ExpenseTracker:
         except Exception as e:
             logger.error(f"Error getting weekly review: {e}")
             return {'error': f'Error: {str(e)}'}
+    
+    def get_category_spending_this_month(self, user_id: int, category: str) -> float:
+        """Get total spending for a specific category this month"""
+        try:
+            # Get this month's expenses
+            user_expenses = self.get_user_expenses_data(user_id, days_back=31)
+            
+            # Filter by category and current month
+            now = get_jakarta_now()
+            current_month = now.month
+            current_year = now.year
+            
+            total_spent = 0
+            for expense in user_expenses:
+                expense_date = datetime.strptime(expense['date'], '%Y-%m-%d')
+                if (expense_date.month == current_month and 
+                    expense_date.year == current_year and 
+                    expense['category'].lower() == category.lower()):
+                    total_spent += expense['amount']
+            
+            return total_spent
+        except Exception as e:
+            logger.error(f"Error getting category spending: {e}")
+            return 0.0
