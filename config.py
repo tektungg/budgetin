@@ -29,6 +29,12 @@ class Config:
     PUBLIC_URL = os.getenv('PUBLIC_URL')
     PORT = int(os.environ.get('PORT', 8080))
     
+    # Timeout Configuration
+    WEBHOOK_TIMEOUT_REGULAR = 8  # seconds for regular operations
+    WEBHOOK_TIMEOUT_OAUTH = 30   # seconds for OAuth operations
+    EXPENSE_SAVE_TIMEOUT = 4     # seconds for quick expense save
+    EXPENSE_RETRY_TIMEOUT = 4    # seconds for retry operations
+    
     # File paths
     USER_CREDENTIALS_FILE = 'user_credentials.pkl'
     

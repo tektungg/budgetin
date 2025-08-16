@@ -138,7 +138,19 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE, ex
     loading_msg = await update.message.reply_text("⏳ Mengambil ringkasan...")
     
     summary = expense_tracker.get_monthly_summary(user_id)
-    await loading_msg.edit_text(summary, parse_mode='Markdown')
+    
+    # Add button to open Google Sheet
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    keyboard = []
+    spreadsheet_id = expense_tracker.user_spreadsheets.get(str(user_id))
+    if spreadsheet_id:
+        keyboard.append([
+            InlineKeyboardButton("📊 Buka Google Sheet", 
+                               url=f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit")
+        ])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+    await loading_msg.edit_text(summary, parse_mode='Markdown', reply_markup=reply_markup)
 
 async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Categories command handler"""

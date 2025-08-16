@@ -132,9 +132,10 @@ def setup_webhook_handler(app, bot_token, bot_application_getter):
                 update_data = request.get_json()
                 
                 # Determine timeout based on operation type
-                # OAuth operations get 30 seconds, others get 6 seconds
+                # OAuth operations get longer timeout, others get standard timeout
                 is_oauth = is_oauth_operation(update_data)
-                timeout_duration = 30 if is_oauth else 6
+                from config import Config
+                timeout_duration = Config.WEBHOOK_TIMEOUT_OAUTH if is_oauth else Config.WEBHOOK_TIMEOUT_REGULAR
                 
                 logger.info(f"Processing update with {timeout_duration}s timeout ({'OAuth' if is_oauth else 'regular'} operation)")
                 

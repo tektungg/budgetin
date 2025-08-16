@@ -42,6 +42,9 @@ class ExpenseTracker:
         self.user_spreadsheets = {}  # Store spreadsheet IDs per user
         self.user_balances = {}  # Store user balances
         
+        # For duplicate detection
+        self.recent_expenses = {}  # user_id -> [(amount, description, timestamp), ...]
+        
         # Initialize new smart features
         self.budget_planner = BudgetPlanner()
         self.alert_system = SmartAlertSystem(self.budget_planner)
@@ -252,7 +255,7 @@ class ExpenseTracker:
             return None
 
     def add_expense(self, user_id, amount, description, category):
-        """Add expense to user's monthly worksheet with enhanced error handling"""
+        """Add expense to user's monthly worksheet with enhanced error handling and duplicate prevention"""
         
         # Rate limiting check
         allowed, message = rate_limiter.is_allowed(user_id)
@@ -266,6 +269,11 @@ class ExpenseTracker:
             
         if amount <= 0:
             return False, "Amount must be greater than zero."
+        
+        # Check for potential duplicate (same user, amount, description within last 2 minutes)
+        if self._is_potential_duplicate(user_id, amount, description):
+            logger.warning(f"Potential duplicate expense detected for user {user_id}: {amount} - {description}")
+            return False, "Duplikasi pengeluaran terdeteksi. Tunggu 2 menit sebelum mencatat pengeluaran yang sama."
         
         try:
             # Get current datetime in Asia/Jakarta timezone
@@ -301,6 +309,9 @@ class ExpenseTracker:
             except Exception as format_error:
                 # Formatting error shouldn't fail the entire operation
                 logger.warning(f"Failed to format row: {format_error}")
+            
+            # Record this expense for duplicate detection
+            self._record_expense_for_duplicate_check(user_id, amount, description, now)
             
             return True, "Successfully saved"
             
@@ -463,7 +474,27 @@ class ExpenseTracker:
             return get_jakarta_now()
     
     def add_expense_with_smart_features(self, user_id: str, amount: int, description: str, category: str) -> Tuple[bool, str, Dict]:
-        """Enhanced add_expense with smart features"""
+        """Enhanced add_expense with smart features - optimized to avoid timeout"""
+        
+        # First, add expense normally (this is the critical operation)
+        success, message = self.add_expense(user_id, amount, description, category)
+        
+        smart_insights = {
+            'budget_alert': None,
+            'anomaly_detection': None,
+            'spending_velocity_alert': None,
+            'weekend_alert': None
+        }
+        
+        if not success:
+            return success, message, smart_insights
+        
+        # Return immediately after successful expense recording
+        # Smart features will be processed asynchronously if needed
+        return success, message, smart_insights
+    
+    def add_expense_with_smart_features_full(self, user_id: str, amount: int, description: str, category: str) -> Tuple[bool, str, Dict]:
+        """Full version with smart features (for manual calls when timeout is not a concern)"""
         
         # First, add expense normally
         success, message = self.add_expense(user_id, amount, description, category)
@@ -517,6 +548,118 @@ class ExpenseTracker:
             logger.error(f"Error in smart features analysis: {e}")
         
         return success, message, smart_insights
+    
+    def get_smart_insights_for_expense(self, user_id: str, amount: int, description: str, category: str) -> Dict:
+        """Get smart insights for an expense without adding it to the sheet"""
+        smart_insights = {
+            'budget_alert': None,
+            'anomaly_detection': None,
+            'spending_velocity_alert': None,
+            'weekend_alert': None
+        }
+        
+        try:
+            # Get user's recent expenses for analysis
+            user_expenses = self.get_user_expenses_data(user_id, days_back=30)
+            
+            # 1. Check Budget Alerts
+            budget_alert = self.alert_system.check_budget_alerts(user_id, category, amount)
+            if budget_alert:
+                smart_insights['budget_alert'] = budget_alert
+            
+            # 2. Check Anomaly Detection
+            new_expense = {
+                'amount': amount,
+                'category': category,
+                'description': description,
+                'time': get_jakarta_now().strftime('%H:%M:%S'),
+                'datetime': get_jakarta_now()
+            }
+            
+            anomaly_report = self.anomaly_detector.get_comprehensive_anomaly_report(
+                user_id, user_expenses, new_expense
+            )
+            
+            if anomaly_report['has_anomalies']:
+                smart_insights['anomaly_detection'] = anomaly_report
+            
+            # 3. Check Spending Velocity Alert
+            velocity_alert = self.alert_system.check_spending_velocity_alert(user_id, user_expenses[-10:])
+            if velocity_alert:
+                smart_insights['spending_velocity_alert'] = velocity_alert
+            
+            # 4. Check Weekend Spending Alert
+            weekend_alert = self.alert_system.check_weekend_spending_alert(user_id, amount, category)
+            if weekend_alert:
+                smart_insights['weekend_alert'] = weekend_alert
+            
+        except Exception as e:
+            logger.error(f"Error in smart insights analysis: {e}")
+        
+        return smart_insights
+    
+    def get_quick_smart_insights(self, user_id: str, amount: int, description: str, category: str) -> Dict:
+        """Get basic smart insights without complex processing to avoid timeout"""
+        smart_insights = {
+            'budget_alert': None,
+            'anomaly_detection': None,
+            'spending_velocity_alert': None,
+            'weekend_alert': None
+        }
+        
+        try:
+            # Only check budget alerts (fastest operation)
+            budget_alert = self.alert_system.check_budget_alerts(user_id, category, amount)
+            if budget_alert:
+                smart_insights['budget_alert'] = budget_alert
+            
+            # Quick weekend check
+            weekend_alert = self.alert_system.check_weekend_spending_alert(user_id, amount, category)
+            if weekend_alert:
+                smart_insights['weekend_alert'] = weekend_alert
+                
+        except Exception as e:
+            logger.error(f"Error in quick smart insights: {e}")
+        
+        return smart_insights
+    
+    def _is_potential_duplicate(self, user_id: str, amount: int, description: str) -> bool:
+        """Check if this expense might be a duplicate of a recent one"""
+        from datetime import datetime, timedelta
+        
+        user_id_str = str(user_id)
+        current_time = datetime.now()
+        
+        # Clean up old entries (older than 5 minutes)
+        if user_id_str in self.recent_expenses:
+            self.recent_expenses[user_id_str] = [
+                (amt, desc, timestamp) for amt, desc, timestamp in self.recent_expenses[user_id_str]
+                if current_time - timestamp < timedelta(minutes=5)
+            ]
+        
+        # Check for duplicates in the last 2 minutes
+        if user_id_str in self.recent_expenses:
+            for recent_amount, recent_desc, timestamp in self.recent_expenses[user_id_str]:
+                time_diff = current_time - timestamp
+                if (time_diff < timedelta(minutes=2) and 
+                    recent_amount == amount and 
+                    recent_desc.lower().strip() == description.lower().strip()):
+                    return True
+        
+        return False
+    
+    def _record_expense_for_duplicate_check(self, user_id: str, amount: int, description: str, timestamp):
+        """Record this expense for future duplicate checking"""
+        user_id_str = str(user_id)
+        
+        if user_id_str not in self.recent_expenses:
+            self.recent_expenses[user_id_str] = []
+        
+        self.recent_expenses[user_id_str].append((amount, description, timestamp))
+        
+        # Keep only last 10 expenses per user to avoid memory issues
+        if len(self.recent_expenses[user_id_str]) > 10:
+            self.recent_expenses[user_id_str] = self.recent_expenses[user_id_str][-10:]
     
     def get_budget_status_for_category(self, user_id: str, category: str) -> Dict:
         """Get budget status for specific category"""

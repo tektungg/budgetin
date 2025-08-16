@@ -84,19 +84,19 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
     # Show loading message
     loading_msg = await update.message.reply_text("⏳ Menyimpan ke Google Sheet...")
 
-    # First attempt with 5-second timeout using threading
+    # Quick save operation - focus only on saving to Google Sheets
     success = False
     message = ""
-    smart_insights = {}
     
     try:
         import threading
         import queue
         
-        def run_operation():
-            """Run expense operation in separate thread"""
+        def run_quick_save():
+            """Run quick expense save (without heavy smart features)"""
             try:
-                result = expense_tracker.add_expense_with_smart_features(user_id, amount, description, category)
+                # Use basic add_expense for speed
+                result = expense_tracker.add_expense(user_id, amount, description, category)
                 result_queue.put(('success', result))
             except Exception as e:
                 result_queue.put(('error', str(e)))
@@ -105,34 +105,36 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
         result_queue = queue.Queue()
         
         # Start operation in separate thread
-        operation_thread = threading.Thread(target=run_operation)
+        operation_thread = threading.Thread(target=run_quick_save)
         operation_thread.daemon = True
         operation_thread.start()
         
-        # Wait for result with 6-second timeout
-        operation_thread.join(timeout=6.0)
+        # Wait for result with quick timeout (optimized for speed)
+        from config import Config
+        operation_thread.join(timeout=Config.EXPENSE_SAVE_TIMEOUT)
         
         if operation_thread.is_alive():
             # Thread is still running - timeout occurred
-            raise TimeoutError("Operation timed out after 6 seconds")
+            raise TimeoutError(f"Quick save operation timed out after {Config.EXPENSE_SAVE_TIMEOUT} seconds")
         
         # Get result from queue
         if not result_queue.empty():
             result_type, result_data = result_queue.get()
             if result_type == 'success':
-                success, message, smart_insights = result_data
+                success, message = result_data
             else:
                 raise Exception(result_data)
         else:
-            raise Exception("No result received from operation")
+            raise Exception("No result received from quick save operation")
         
         if success:
-            # Get current date in Indonesian format
+            # Get current date in Indonesian format for immediate response
             now = get_jakarta_now()
             tanggal_indo = format_tanggal_indo(now.strftime('%Y-%m-%d'))
             month_name = get_month_worksheet_name(now.year, now.month)
             current_balance = expense_tracker.get_user_balance(user_id)
 
+            # Basic success response without smart features
             response = f"""
 ✅ *Pengeluaran berhasil dicatat!*
 
@@ -143,39 +145,30 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
 💳 *Saldo tersisa:* Rp {current_balance:,}
 📊 *Worksheet:* {month_name}
 """
-
-            # Add smart insights to response
-            alerts = []
             
-            # Budget Alert
-            if smart_insights.get('budget_alert'):
-                budget_alert = smart_insights['budget_alert']
-                alerts.append(f"\n{budget_alert['message']}")
+            # Get quick smart insights (only budget and weekend alerts)
+            try:
+                quick_insights = expense_tracker.get_quick_smart_insights(user_id, amount, description, category)
+                
+                # Add quick alerts to response
+                alerts = []
+                if quick_insights.get('budget_alert'):
+                    budget_alert = quick_insights['budget_alert']
+                    alerts.append(f"\n{budget_alert['message']}")
+                
+                if quick_insights.get('weekend_alert'):
+                    weekend_alert = quick_insights['weekend_alert']
+                    alerts.append(f"\n{weekend_alert['message']}")
+                
+                if alerts:
+                    response += "\n⚠️ *Smart Alerts:*"
+                    for alert in alerts:
+                        response += alert
+                        
+            except Exception as insights_error:
+                logger.warning(f"Failed to get quick insights: {insights_error}")
             
-            # Anomaly Detection
-            if smart_insights.get('anomaly_detection'):
-                anomaly_report = smart_insights['anomaly_detection']
-                for anomaly in anomaly_report['anomalies']:
-                    if anomaly.get('message'):
-                        alerts.append(f"\n{anomaly['message']}")
-            
-            # Spending Velocity Alert
-            if smart_insights.get('spending_velocity_alert'):
-                velocity_alert = smart_insights['spending_velocity_alert']
-                alerts.append(f"\n{velocity_alert['message']}")
-            
-            # Weekend Alert
-            if smart_insights.get('weekend_alert'):
-                weekend_alert = smart_insights['weekend_alert']
-                alerts.append(f"\n{weekend_alert['message']}")
-            
-            # Add alerts to response
-            if alerts:
-                response += "\n⚠️ *Smart Alerts:*"
-                for alert in alerts[:2]:  # Limit to 2 alerts to avoid too long message
-                    response += alert
-            
-            # Create interactive buttons
+            # Create basic interactive buttons
             keyboard = [
                 [
                     InlineKeyboardButton("📊 Ringkasan Bulan", callback_data="summary_month"),
@@ -188,12 +181,14 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
             ]
             
             # Add budget suggestion if no budget set for this category
-            budget_status = expense_tracker.get_budget_status_for_category(user_id, category)
-            if budget_status.get('status') == 'no_budget':
-                keyboard.append([InlineKeyboardButton("💡 Set Budget", callback_data=f"suggest_budget_{category.replace(' ', '_')}")])
+            try:
+                budget_status = expense_tracker.get_budget_status_for_category(user_id, category)
+                if budget_status.get('status') == 'no_budget':
+                    keyboard.append([InlineKeyboardButton("💡 Set Budget", callback_data=f"suggest_budget_{category.replace(' ', '_')}")])
+            except Exception:
+                pass  # Skip if budget check fails
             
             reply_markup = InlineKeyboardMarkup(keyboard)
-
             await loading_msg.edit_text(response, parse_mode='Markdown', reply_markup=reply_markup)
         else:
             await loading_msg.edit_text(
@@ -202,21 +197,21 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
             )
     
     except TimeoutError:
-        logger.warning(f"First attempt timed out after 6s for user {user_id}")
+        logger.warning(f"Quick save timed out after {Config.EXPENSE_SAVE_TIMEOUT}s for user {user_id}")
         
-        # Retry message
+        # Retry message - still try to save but with simpler approach
         await loading_msg.edit_text(
             "⏳ *Proses lebih lama dari biasanya...*\n\n"
-            "Sedang mencoba ulang (percobaan 2/2)...",
+            "Sedang mencoba ulang...",
             parse_mode='Markdown'
         )
         
-        # Second attempt with 5-second timeout using same threading approach
+        # Second attempt with even simpler approach - just save the expense
         try:
-            def run_retry_operation():
-                """Run retry operation in separate thread"""
+            def run_simple_retry():
+                """Run very simple retry operation"""
                 try:
-                    result = expense_tracker.add_expense_with_smart_features(user_id, amount, description, category)
+                    result = expense_tracker.add_expense(user_id, amount, description, category)
                     retry_queue.put(('success', result))
                 except Exception as e:
                     retry_queue.put(('error', str(e)))
@@ -225,32 +220,31 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
             retry_queue = queue.Queue()
             
             # Start retry operation in separate thread
-            retry_thread = threading.Thread(target=run_retry_operation)
+            retry_thread = threading.Thread(target=run_simple_retry)
             retry_thread.daemon = True
             retry_thread.start()
             
-            # Wait for result with 6-second timeout
-            retry_thread.join(timeout=6.0)
+            # Wait for result with retry timeout
+            retry_thread.join(timeout=Config.EXPENSE_RETRY_TIMEOUT)
             
             if retry_thread.is_alive():
                 # Second attempt also timed out
-                raise TimeoutError("Second attempt also timed out after 6 seconds")
+                raise TimeoutError(f"Second attempt also timed out after {Config.EXPENSE_RETRY_TIMEOUT} seconds")
             
             # Get result from retry queue
             if not retry_queue.empty():
                 result_type, result_data = retry_queue.get()
                 if result_type == 'success':
-                    success, message, smart_insights = result_data
+                    success, message = result_data
                 else:
                     raise Exception(result_data)
             else:
                 raise Exception("No result received from retry operation")
             
             if success:
-                # Same success handling as above
+                # Simple success handling for retry
                 now = get_jakarta_now()
                 tanggal_indo = format_tanggal_indo(now.strftime('%Y-%m-%d'))
-                month_name = get_month_worksheet_name(now.year, now.month)
                 current_balance = expense_tracker.get_user_balance(user_id)
 
                 response = f"""
@@ -261,10 +255,8 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
 📂 *Kategori:* {category}
 📅 *Tanggal:* {tanggal_indo}
 💳 *Saldo tersisa:* Rp {current_balance:,}
-📊 *Worksheet:* {month_name}
 """
                 
-                # Simple success message without complex features to avoid more timeouts
                 await loading_msg.edit_text(response, parse_mode='Markdown')
             else:
                 await loading_msg.edit_text(
@@ -273,9 +265,9 @@ async def handle_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, exp
                 )
         
         except TimeoutError:
-            logger.error(f"Second attempt also timed out after 6s for user {user_id}")
+            logger.error(f"Second attempt also timed out after {Config.EXPENSE_RETRY_TIMEOUT}s for user {user_id}")
             await loading_msg.edit_text(
-                "❌ *Operasi gagal setelah 2 percobaan (masing-masing 6 detik)*\n\n"
+                f"❌ *Operasi gagal setelah 2 percobaan (masing-masing {Config.EXPENSE_RETRY_TIMEOUT} detik)*\n\n"
                 "🔧 *Yang bisa Anda lakukan:*\n"
                 "• Tunggu 1-2 menit lalu coba lagi\n"
                 "• Pastikan koneksi internet stabil\n"
@@ -375,7 +367,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, ex
         
         try:
             summary = expense_tracker.get_monthly_summary(user_id)
-            await loading_message.edit_text(summary, parse_mode='Markdown')
+            
+            # Add button to open Google Sheet
+            keyboard = []
+            spreadsheet_id = expense_tracker.user_spreadsheets.get(str(user_id))
+            if spreadsheet_id:
+                keyboard.append([
+                    InlineKeyboardButton("📊 Buka Google Sheet", 
+                                       url=f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit")
+                ])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+            await loading_message.edit_text(summary, parse_mode='Markdown', reply_markup=reply_markup)
         except Exception as e:
             logger.error(f"Error in summary callback: {e}")
             await loading_message.edit_text("❌ Gagal mengambil ringkasan.")
@@ -422,9 +425,86 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, ex
         return
     
     if query.data == "view_insights":
-        # Import here to avoid circular import
-        from handlers.budget_handlers import insights_command
-        await insights_command(query, context)
+        # Get full smart insights for the latest expense
+        loading_message = await query.edit_message_text("⏳ Menganalisis data pengeluaran...")
+        
+        try:
+            # Get user's recent expenses to provide insights
+            user_expenses = expense_tracker.get_user_expenses_data(user_id, days_back=30)
+            
+            if not user_expenses:
+                await loading_message.edit_text(
+                    "❌ Tidak ada data pengeluaran untuk dianalisis."
+                )
+                return
+            
+            # Get the latest expense for analysis
+            latest_expense = user_expenses[-1]
+            
+            # Get smart insights without adding another expense
+            smart_insights = expense_tracker.get_smart_insights_for_expense(
+                str(user_id), 
+                int(latest_expense.get('amount', 0)),
+                latest_expense.get('description', ''),
+                latest_expense.get('category', '')
+            )
+            
+            if not smart_insights or not any(smart_insights.values()):
+                await loading_message.edit_text(
+                    "📊 *Smart Insights*\n\n"
+                    "Tidak ada peringatan atau insight khusus untuk pengeluaran terbaru Anda.\n\n"
+                    "✅ Pola pengeluaran Anda terlihat normal!",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Build insights response
+            insights_response = "📊 *Smart Insights - Analisis Lengkap*\n\n"
+            insights_found = False
+            
+            # Budget Alert
+            if smart_insights.get('budget_alert'):
+                budget_alert = smart_insights['budget_alert']
+                insights_response += f"💰 *Budget Alert:*\n{budget_alert['message']}\n\n"
+                insights_found = True
+            
+            # Anomaly Detection
+            if smart_insights.get('anomaly_detection'):
+                anomaly_report = smart_insights['anomaly_detection']
+                if anomaly_report.get('has_anomalies'):
+                    insights_response += "🔍 *Anomaly Detection:*\n"
+                    for anomaly in anomaly_report['anomalies'][:3]:  # Limit to 3 anomalies
+                        if anomaly.get('message'):
+                            insights_response += f"• {anomaly['message']}\n"
+                    insights_response += "\n"
+                    insights_found = True
+            
+            # Spending Velocity Alert
+            if smart_insights.get('spending_velocity_alert'):
+                velocity_alert = smart_insights['spending_velocity_alert']
+                insights_response += f"⚡ *Spending Velocity:*\n{velocity_alert['message']}\n\n"
+                insights_found = True
+            
+            # Weekend Alert
+            if smart_insights.get('weekend_alert'):
+                weekend_alert = smart_insights['weekend_alert']
+                insights_response += f"📅 *Weekend Alert:*\n{weekend_alert['message']}\n\n"
+                insights_found = True
+            
+            if not insights_found:
+                insights_response += "✅ Tidak ada peringatan khusus.\n\nPola pengeluaran Anda terlihat normal!"
+            else:
+                insights_response += "💡 *Tips:* Gunakan insights ini untuk mengelola keuangan lebih baik!"
+            
+            await loading_message.edit_text(insights_response, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error getting full insights: {e}")
+            await loading_message.edit_text(
+                "❌ Gagal mengambil insights lengkap.\n\n"
+                "Silakan coba lagi nanti.",
+                parse_mode='Markdown'
+            )
         return
     
     if query.data.startswith("budget_status_"):
